@@ -1,4 +1,5 @@
 /** Read Nortec Vector ADV serial packets */
+#include "lander.h"
 
 // TODO: create structs for VSD and VVD packets
 // TODO: function to format data from each struct into csv formatted output line

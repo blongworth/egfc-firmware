@@ -1,24 +1,10 @@
 /* GEMS Lander*/
 
-// uncomment to enable ethernet communication
-#define USE_ETHERNET
-//
+#include "lander.h"
 #include <SPI.h>
-#include <SD.h>
-#include <TimeLib.h>
 #include "USBHost_t36.h"
 #include <RGAController.h>
 #include <TurboPumpController.h>
-
-#ifdef USE_ETHERNET
-#include <NativeEthernet.h>
-#include <NativeEthernetUdp.h>
-#endif
-
-#define RGA_SERIAL Serial4
-#define ADV_SERIAL Serial3
-#define VALVE_SERIAL Serial2
-#define LED_PIN 13
 
 // If defined, send valve change commands
 // time between inlet valve position changes
@@ -92,13 +78,6 @@ unsigned int destinationPort = 8002;
 EthernetUDP Udp;
 #endif
 
-// ADV globals
-const byte numChars = 28; //max bytes for ADV packets
-const byte startMarker = 165; //start byte of ADV packets
-const byte VVDChar = 16; //VVD packet designator
-const byte VSDChar = 17; //VSD packet designator
-const byte VVDLength = 24; //length of VVD packets
-const byte VSDLength = 28; //length of VSD packets
 byte ADVpacket[numChars];
 boolean newData = false;
 
@@ -117,6 +96,28 @@ elapsedMillis turbo_bad_timer;
 uint8_t ADVbuffer[16384];
 
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
+
+void ADVbegin();
+void recvADV();
+void parseADV();
+time_t getTeensy3Time();
+void getTimeISO8601(char *iso8601Time, size_t bufferSize);
+void createNewDataFile();
+void StatusMsg(int M);
+void GEMS_Start(int TB_Spd3);
+void GEMS_Stop();
+void turbo_start(int TB_Spd3);
+void startRGA();
+void printLoopRate();
+void logValve();
+#ifdef VALVE_CHANGE_TIME
+void changeValve();
+#endif
+bool startTurboPump(uint16_t targetSpeedHz);
+void printTurboStatus(Print &out);
+void serviceRGAAcquisition();
+void logRGACycle(const RGACycleData &cycle);
+void checkTurboAfterRGACycle(int turboSpeed);
 
 void startUSB()
 {
