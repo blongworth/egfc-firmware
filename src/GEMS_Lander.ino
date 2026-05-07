@@ -6,7 +6,9 @@
 #include <SPI.h>
 #include <SD.h>
 #include <TimeLib.h>
+#include "USBHost_t36.h"
 #include <RGAController.h>
+#include <TurboPumpController.h>
 
 #ifdef USE_ETHERNET
 #include <NativeEthernet.h>
@@ -51,6 +53,31 @@ RGAConfig rgaConfig = {
 RGAController rga(RGA_SERIAL);
 RGACycleData latestRGACycle;
 
+TurboPumpConfig turboPumpConfig = {
+  1200,  // defaultTargetSpeedHz
+  1500,  // maxSpeedHz
+  50,    // readySpeedMarginHz
+  15,    // readyMaxDrivePowerW
+  1000,  // responseTimeoutMs
+  50,    // statusQuerySettleMs
+  250    // commandAckSettleMs
+};
+TurboPumpStatus latestTurboStatus;
+
+const uint32_t USB_BAUD = 9600;
+USBHost myusb;
+USBHub hub1(myusb);
+USBHub hub2(myusb);
+USBHIDParser hid1(myusb);
+USBHIDParser hid2(myusb);
+USBHIDParser hid3(myusb);
+USBSerial userial(myusb);
+TurboPumpController turboPump(userial);
+USBDriver *drivers[] = {&hub1, &hub2, &hid1, &hid2, &hid3, &userial};
+const uint8_t CNT_DEVICES = sizeof(drivers) / sizeof(drivers[0]);
+const char *driver_names[CNT_DEVICES] = {"Hub1", "Hub2", "HID1", "HID2", "HID3", "USERIAL1"};
+bool driver_active[CNT_DEVICES] = {false, false, false, false, false, false};
+
 char FileName[32];
 File dataFile;
 bool file_created = false;
@@ -79,23 +106,51 @@ const int chipSelect = BUILTIN_SDCARD;
 
 const int BUFFER_SIZE = 100;
 char SrfMsg[BUFFER_SIZE];
-int rlen;
 int Status;
-int Turbo;
 int OnOff=0;
-int Status_Turbo[10];
-int Status_Turbo_B[3];
-int TB_Spd = 1200;
+uint16_t TB_Spd = turboPumpConfig.defaultTargetSpeedHz;
 unsigned long Timer;
 int turbo_bad_ctr = 0;
 elapsedMillis turbo_bad_timer;
-const int TURBO_BUFFER_SIZE = 30;
-char turbo_message[30];
 
 // buffer for ADV serial recv
 uint8_t ADVbuffer[16384];
 
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
+
+void startUSB()
+{
+  Serial.println("\n\nUSB Host Testing - Serial");
+  myusb.begin();
+}
+
+void USB_serial_stuff()
+{
+  myusb.Task();
+
+  for (uint8_t i = 0; i < CNT_DEVICES; i++) {
+    if (*drivers[i] != driver_active[i]) {
+      if (driver_active[i]) {
+        Serial.printf("*** Device %s - disconnected ***\n", driver_names[i]);
+        driver_active[i] = false;
+      } else {
+        Serial.printf("*** Device %s %x:%x - connected ***\n", driver_names[i], drivers[i]->idVendor(), drivers[i]->idProduct());
+        driver_active[i] = true;
+
+        const uint8_t *psz = drivers[i]->manufacturer();
+        if (psz && *psz) Serial.printf("  manufacturer: %s\n", psz);
+        psz = drivers[i]->product();
+        if (psz && *psz) Serial.printf("  product: %s\n", psz);
+        psz = drivers[i]->serialNumber();
+        if (psz && *psz) Serial.printf("  Serial: %s\n", psz);
+
+        if (drivers[i] == &userial) {
+          userial.begin(USB_BAUD);
+        }
+      }
+    }
+  }
+}
 
 ////////////////////// Setup //////////////////////
 
@@ -143,6 +198,7 @@ void setup() {
   } 
 
   startUSB();
+  turboPump.configure(turboPumpConfig);
 
   Serial.println("Initializing RGA...");
   uint8_t rgaStatus = 0;
@@ -248,7 +304,6 @@ void loop() {
 #endif
   
   if (packetSize) {
-    //int rlen
 #ifdef USE_ETHERNET
     Udp.readBytesUntil('\r', SrfMsg, BUFFER_SIZE);
 #else
@@ -297,17 +352,20 @@ void loop() {
     // if surface message !RS change turbo speed
     if (SrfMsg[0] == '!' && SrfMsg[1] == 'R' && SrfMsg[2] == 'S') {
       Serial.println("change turbo speed loop");
-      char TB_Spdc[4];
+      char TB_Spdc[5];
       StatusMsg(9);
       TB_Spdc[0] = SrfMsg[3];
       TB_Spdc[1] = SrfMsg[4];
       TB_Spdc[2] = SrfMsg[5];
       TB_Spdc[3] = SrfMsg[6];
+      TB_Spdc[4] = '\0';
       StatusMsg(10);
-      TB_Spd = atoi(TB_Spdc);
+      TB_Spd = static_cast<uint16_t>(atoi(TB_Spdc));
       StatusMsg(11);
       Serial.println(TB_Spd);
-      Turbo_Change_Speed(TB_Spd);
+      if (!turboPump.setTargetSpeedHz(TB_Spd, &Serial)) {
+        Serial.println("Turbo speed change timed out");
+      }
       StatusMsg(12);
       int c_s = 0;
       // wait for 5 min adjust speed
@@ -412,7 +470,7 @@ void loop() {
 
   // Start Filament if Turbo looks OK
   if (Status == 4) {
-    if (Turbo_Check(TB_Spd) == 1) {
+    if (turboPump.isReady(TB_Spd, latestTurboStatus, &Serial)) {
       startRGA();
     } else {
       Serial.println("Turbo not ready!");
@@ -546,7 +604,7 @@ void createNewDataFile()
   Serial.println(FileName);
 }
 
-void GEMS_Start(int TB_Spd3) {
+bool startTurboPump(uint16_t targetSpeedHz) {
   StatusMsg(1);
 
   // ADV Start
@@ -556,15 +614,23 @@ void GEMS_Start(int TB_Spd3) {
 
   // Turbo Start
   Serial.println("Turbo Starting ...");
-  Turbo_Change_Speed(TB_Spd3);
-    Serial.println("StartTurbo");
-  startTurbo();
+  if (!turboPump.setTargetSpeedHz(targetSpeedHz, &Serial)) {
+    Serial.println("Turbo speed command timed out");
+    return false;
+  }
+
+  Serial.println("StartTurbo");
+  if (!turboPump.start(&Serial)) {
+    Serial.println("Turbo start command timed out");
+    return false;
+  }
+
   int c_start = 0;
   // wait for 5 min startup
   while (c_start < 300) {
     digitalWrite(LED_PIN, HIGH);
     StatusMsg(3);
-    Turbo = Turbo_Check(TB_Spd3);
+    turboPump.isReady(targetSpeedHz, latestTurboStatus, &Serial);
     delay(500);
     c_start = c_start + 1;
     digitalWrite(LED_PIN, LOW);
@@ -572,12 +638,17 @@ void GEMS_Start(int TB_Spd3) {
   }
   StatusMsg(3);
   delay(1000);
-  int d = Turbo_Check(TB_Spd3);
+  bool ready = turboPump.isReady(targetSpeedHz, latestTurboStatus, &Serial);
   Serial.print("Turbo check final:");
-  Serial.println(d);
-  
+  Serial.println(ready ? 1 : 0);
+  return ready;
+}
+
+void GEMS_Start(int TB_Spd3) {
+  bool ready = startTurboPump(static_cast<uint16_t>(TB_Spd3));
+
   // If turbo running, start RGA
-  if (d == 1) {
+  if (ready) {
     startRGA();
   } else {
     Serial.println("Turbo failed to start, stopping turbo");
@@ -587,34 +658,7 @@ void GEMS_Start(int TB_Spd3) {
 }
 
 void turbo_start(int TB_Spd3) {
-  StatusMsg(1);
-
-  digitalWrite(LED_PIN, HIGH);
- 
-  StatusMsg(2);
-
-  // Turbo Start
-  Serial.println("Turbo Starting ...");
-  Turbo_Change_Speed(TB_Spd3);
-    Serial.println("StartTurbo");
-  startTurbo();
-  int c_start = 0;
-  // wait for 5 min startup
-  // should do this as a timer-polled state to avoid blocking
-  while (c_start < 300) {
-    digitalWrite(LED_PIN, HIGH);
-    StatusMsg(3);
-    Turbo = Turbo_Check(TB_Spd3);
-    delay(500);
-    c_start = c_start + 1;
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
-  }
-  StatusMsg(3);
-  delay(1000);
-  int d = Turbo_Check(TB_Spd3);
-  Serial.print("Turbo check final:");
-  Serial.println(d);
+  startTurboPump(static_cast<uint16_t>(TB_Spd3));
 }
 
 void GEMS_Stop() {
@@ -632,12 +676,14 @@ void GEMS_Stop() {
 
   Serial.println("Stop turbopump");
 
-  stopTurbo();
+  if (!turboPump.stop(&Serial)) {
+    Serial.println("Turbo stop command timed out");
+  }
 
   int TurboSpeed = 999;
   while (TurboSpeed > 1) {
-    Get_Status_Turbo_B(Status_Turbo);
-    TurboSpeed = Status_Turbo[2];
+    turboPump.readBasicStatus(latestTurboStatus);
+    TurboSpeed = latestTurboStatus.actualSpeedHz;
     digitalWrite(LED_PIN, HIGH);
     delay(1000);    
     digitalWrite(LED_PIN, LOW);
@@ -664,6 +710,23 @@ void startRGA()
   }
 }
 
+void printTurboStatus(Print &out) {
+  turboPump.readFullStatus(latestTurboStatus);
+  out.print(latestTurboStatus.errorCode);
+  out.print(",");
+  out.print(latestTurboStatus.actualSpeedHz);
+  out.print(",");
+  out.print(latestTurboStatus.drivePowerW);
+  out.print(",");
+  out.print(latestTurboStatus.driveVoltageV);
+  out.print(",");
+  out.print(latestTurboStatus.electronicsTempC);
+  out.print(",");
+  out.print(latestTurboStatus.pumpBottomTempC);
+  out.print(",");
+  out.print(latestTurboStatus.motorTempC);
+}
+
 #ifdef USE_ETHERNET
 void StatusMsg(int M) {
   char iso8601Time[25];
@@ -673,20 +736,7 @@ void StatusMsg(int M) {
   Udp.print(iso8601Time);
   Udp.print(","); 
   if (M == 3) {
-    Get_Status_Turbo_A(Status_Turbo);
-    Udp.print(turbo_message);
-    Udp.print(",");
-    Udp.print(Status_Turbo[2]);
-    Udp.print(",");
-    Udp.print(Status_Turbo[4]);
-    Udp.print(",");
-    Udp.print(Status_Turbo[6]);
-    Udp.print(",");
-    Udp.print(Status_Turbo[7]);
-    Udp.print(",");
-    Udp.print(Status_Turbo[8]);
-    Udp.print(",");
-    Udp.print(Status_Turbo[9]);
+    printTurboStatus(Udp);
     float SRS = -1.0f;
     rga.readFilamentStatusBlocking(SRS);
     Udp.print(",");
@@ -706,20 +756,7 @@ void StatusMsg(int M) {
   Serial.print(iso8601Time);
   Serial.print(","); 
   if (M == 3) {
-    Get_Status_Turbo_A(Status_Turbo);
-    Serial.print(Status_Turbo[0]);
-    Serial.print(",");
-    Serial.print(Status_Turbo[2]);
-    Serial.print(",");
-    Serial.print(Status_Turbo[4]);
-    Serial.print(",");
-    Serial.print(Status_Turbo[6]);
-    Serial.print(",");
-    Serial.print(Status_Turbo[7]);
-    Serial.print(",");
-    Serial.print(Status_Turbo[8]);
-    Serial.print(",");
-    Serial.print(Status_Turbo[9]);
+    printTurboStatus(Serial);
     float SRS = -1.0f;
     rga.readFilamentStatusBlocking(SRS);
     Serial.print(",");
@@ -813,7 +850,7 @@ void checkTurboAfterRGACycle(int turboSpeed) {
   const int N_BAD_CHECKS = 2;
   const unsigned long BAD_CHECK_TIME = 20000; // 20 seconds in milliseconds
 
-  if (Turbo_Check(turboSpeed) != 1) {
+  if (!turboPump.isReady(static_cast<uint16_t>(turboSpeed), latestTurboStatus, &Serial)) {
     Serial.println("Turbo problem detected");
     if (turbo_bad_timer > BAD_CHECK_TIME) {
       // Reset counter and timer if outside time window
