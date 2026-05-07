@@ -13,19 +13,7 @@
 #endif
 
 #define RGA_SERIAL Serial4
-#define ADV_SERIAL Serial3
-#define VALVE_SERIAL Serial2
 #define LED_PIN 13
-
-constexpr byte numChars = 28;
-constexpr byte startMarker = 165;
-constexpr byte VVDChar = 16;
-constexpr byte VSDChar = 17;
-constexpr byte VVDLength = 24;
-constexpr byte VSDLength = 28;
-
-extern byte ADVpacket[numChars];
-extern boolean newData;
 
 extern char FileName[32];
 extern File dataFile;

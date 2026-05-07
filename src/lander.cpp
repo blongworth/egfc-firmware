@@ -6,10 +6,6 @@
 #include <RGAController.h>
 #include <TurboPumpController.h>
 
-// If defined, send valve change commands
-// time between inlet valve position changes
-//#define VALVE_CHANGE_TIME 1000 * 60 * 7.5 // 7.5 minutes
-
 // AMU's to measure
 const uint8_t RGA_MASSES[] = {
   2,
@@ -78,9 +74,6 @@ unsigned int destinationPort = 8002;
 EthernetUDP Udp;
 #endif
 
-byte ADVpacket[numChars];
-boolean newData = false;
-
 const int chipSelect = BUILTIN_SDCARD;
 
 const int BUFFER_SIZE = 100;
@@ -92,14 +85,8 @@ unsigned long Timer;
 int turbo_bad_ctr = 0;
 elapsedMillis turbo_bad_timer;
 
-// buffer for ADV serial recv
-uint8_t ADVbuffer[16384];
-
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 
-void ADVbegin();
-void recvADV();
-void parseADV();
 time_t getTeensy3Time();
 void getTimeISO8601(char *iso8601Time, size_t bufferSize);
 void createNewDataFile();
@@ -109,10 +96,6 @@ void GEMS_Stop();
 void turbo_start(int TB_Spd3);
 void startRGA();
 void printLoopRate();
-void logValve();
-#ifdef VALVE_CHANGE_TIME
-void changeValve();
-#endif
 bool startTurboPump(uint16_t targetSpeedHz);
 void printTurboStatus(Print &out);
 void serviceRGAAcquisition();
@@ -166,15 +149,8 @@ void setup() {
 
   Serial.printf("\n\nGEMS Lander %s \n", compileTime);
 
-  ADV_SERIAL.begin(115200); // ADV
-
-  // increase size of ADV serial recv buffer
-  ADV_SERIAL.addMemoryForRead(&ADVbuffer, sizeof(ADVbuffer));
-
   RGA_SERIAL.begin(28800, SERIAL_8N1);  //RGA
   rga.configure(rgaConfig);
-  
-  VALVE_SERIAL.begin(9600); // Valve
 
   // connect to USB
   // pinMode(2, OUTPUT);
@@ -228,9 +204,6 @@ void setup() {
   Serial.print("Ethernet open on IP address: ");
   Serial.println(Ethernet.localIP());
 #endif
-
-  Serial.println("Starting ADV...");
-  ADVbegin();
 
 #ifdef USE_ETHERNET
   Serial.println("Getting time from surface...");
@@ -327,7 +300,7 @@ void loop() {
       OnOff = 0;
     }
 
-    // if surface message !Z22 change status to stop mass spec and ADV
+    // if surface message !Z22 change status to stop mass spec
     if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '2' && SrfMsg[3] == '2') {
       Status = 3;
       OnOff = 0;
@@ -337,14 +310,14 @@ void loop() {
     if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '0') {
       turbo_start(TB_Spd);
     }
-    // if surface message !Z12 change status to start mass spec and ADV
+    // if surface message !Z12 change status to start mass spec
     // Use if turbo already running and system pumped down
     if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '2') {
       Status = 4;
       OnOff = 0;
     }
 
-    // if surface message !Z11 change status to start mass spec and ADV
+    // if surface message !Z11 change status to start mass spec
     if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '1') {
       Status = 1;
       OnOff = 1;
@@ -411,7 +384,7 @@ void loop() {
     }
   }
 
-  // Start Turbo Mass Spec and ADV
+  // Start Turbo Mass Spec
   if (Status == 1) {
     OnOff=1;
     GEMS_Start(TB_Spd);
@@ -423,7 +396,7 @@ void loop() {
     digitalWrite(LED_PIN, HIGH);
   }
 
-  // Stop Turbo Mass Spec and ADV
+  // Stop Turbo Mass Spec
   if (Status == 3) {
     digitalWrite(LED_PIN, LOW);
     GEMS_Stop();
@@ -495,19 +468,8 @@ void loop() {
 
   // Measurement loop
   if (Status == 2) {
-    recvADV();
-    parseADV();
     serviceRGAAcquisition();
-    logValve();
   }
-  
-  // Check valve timer and swap valve if needed
-  // Log timestamp and position if changed
-  #ifdef VALVE_CHANGE_TIME
-  if (Status == 2) {
-    changeValve();
-  }
-  #endif
 
   USB_serial_stuff();
   
@@ -534,61 +496,6 @@ void printLoopRate() {
   }
 }
 
-void logValve() {
-  if (!VALVE_SERIAL.available()) return;
-
-  if (VALVE_SERIAL.peek() != 'V') {
-    // If the first byte is not 'V', read and discard the rest of the line
-    while (VALVE_SERIAL.available()) {
-      VALVE_SERIAL.read();
-    }
-    return;
-  }
-
-  char valve_status[100];
-  VALVE_SERIAL.readBytesUntil('\n', valve_status, sizeof(valve_status));
-  // Log the valve position to the serial monitor
-  Serial.print("Valve status: ");
-  Serial.println(valve_status);
-
-  char timestamp[25];
-  getTimeISO8601(timestamp, sizeof(timestamp));
-
-  // Send the valve status to the surface via UDP
-  Udp.beginPacket(destinationIP, destinationPort);
-  Udp.printf("%s,%s", valve_status, timestamp);
-  Udp.write(13);
-  Udp.endPacket();
-
-  // Log the valve position to the SD card if open
-  if (dataFile) {
-    dataFile.printf("%s,%s", valve_status, timestamp);
-    dataFile.println();
-  } else {
-    Serial.println("No SD file open for logging valve status.");
-  }
-}
-
-#ifdef VALVE_CHANGE_TIME
-// TODO: do this by clock time
-void changeValve() {
-  static bool isTop = true;  // Track current valve position
-  static elapsedMillis valve_timer;
-
-  if (valve_timer >= VALVE_CHANGE_TIME) {
-    // Toggle position and send command
-    isTop = !isTop;
-    char cmd = isTop ? 't' : 'b';
-    
-    Serial.print("Changing valve to position: ");
-    Serial.println(cmd);
-    
-    VALVE_SERIAL.write(cmd);
-    valve_timer = 0;
-  }
-}
-#endif
-
 void createNewDataFile()
 {
   if (dataFile) {
@@ -608,7 +515,6 @@ void createNewDataFile()
 bool startTurboPump(uint16_t targetSpeedHz) {
   StatusMsg(1);
 
-  // ADV Start
   digitalWrite(LED_PIN, HIGH);
  
   StatusMsg(2);
