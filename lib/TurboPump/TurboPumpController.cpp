@@ -164,6 +164,10 @@ bool TurboPumpController::readFullStatus(TurboPumpStatus &status)
 bool TurboPumpController::isReady(uint16_t targetSpeedHz, TurboPumpStatus &status, Print *log)
 {
   readBasicStatus(status);
+  int readySpeedHz = static_cast<int>(targetSpeedHz) - static_cast<int>(config_.readySpeedMarginHz);
+  if (readySpeedHz < 0) {
+    readySpeedHz = 0;
+  }
 
   if (log) {
     log->print("Error:");
@@ -171,7 +175,7 @@ bool TurboPumpController::isReady(uint16_t targetSpeedHz, TurboPumpStatus &statu
     log->println(" ");
 
     log->print("NominalSpd (");
-    log->print(targetSpeedHz - config_.readySpeedMarginHz);
+    log->print(readySpeedHz);
     log->print("Hz):");
     log->print(status.actualSpeedHz);
     log->println("Hz");
@@ -181,7 +185,6 @@ bool TurboPumpController::isReady(uint16_t targetSpeedHz, TurboPumpStatus &statu
     log->println("W");
   }
 
-  const int readySpeedHz = static_cast<int>(targetSpeedHz) - static_cast<int>(config_.readySpeedMarginHz);
   return status.valid &&
          status.errorCode == 0 &&
          status.actualSpeedHz > readySpeedHz &&
