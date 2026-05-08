@@ -2,6 +2,12 @@
 
 Firmware for the eelgrass flux chamber GEMS lander controller. The project is a PlatformIO Arduino build for a Teensy 4.1 that controls the RGA, controls and monitors the turbopump, logs RGA measurements to SD, and exchanges commands/status/data with the surface system.
 
+## TODO
+
+* valve control
+* seaphox/scallop interface
+* chamber switching, flushing logic and status logging
+
 ## Summary
 
 The firmware runs a cooperative main loop. Long-running activities are split into service functions so RGA acquisition, turbopump supervision, surface communication, USB host servicing, SD file rotation, and status reporting can continue without blocking each other during normal measurement cycles.
