@@ -90,6 +90,78 @@ void test_state_on_off_mapping()
   TEST_ASSERT_FALSE(stateOnOff(LanderState::Error));
 }
 
+void test_format_rga_mass_rows()
+{
+  char row[64];
+  TEST_ASSERT_TRUE(formatRgaMassRow(row, sizeof(row), "2026-05-08T12:00:00Z", 28, -42, true));
+  TEST_ASSERT_EQUAL_STRING("R:2026-05-08T12:00:00Z,28,-42", row);
+
+  TEST_ASSERT_TRUE(formatRgaMassRow(row, sizeof(row), "2026-05-08T12:00:00Z", 18, 0, false));
+  TEST_ASSERT_EQUAL_STRING("R:2026-05-08T12:00:00Z,18,timeout", row);
+}
+
+void test_format_rga_total_pressure_rows()
+{
+  char row[64];
+  TEST_ASSERT_TRUE(formatRgaTotalPressureRow(row, sizeof(row), "2026-05-08T12:00:00Z", 123456, true));
+  TEST_ASSERT_EQUAL_STRING("TP:2026-05-08T12:00:00Z,123456", row);
+
+  TEST_ASSERT_TRUE(formatRgaTotalPressureRow(row, sizeof(row), "2026-05-08T12:00:00Z", 0, false));
+  TEST_ASSERT_EQUAL_STRING("TP:2026-05-08T12:00:00Z,timeout", row);
+}
+
+void test_format_rga_rows_report_truncation()
+{
+  char row[8];
+  TEST_ASSERT_FALSE(formatRgaMassRow(row, sizeof(row), "2026-05-08T12:00:00Z", 28, 1, true));
+  TEST_ASSERT_FALSE(formatRgaTotalPressureRow(row, sizeof(row), "2026-05-08T12:00:00Z", 1, true));
+}
+
+void test_data_file_rotation_window()
+{
+  bool createdInWindow = false;
+
+  TEST_ASSERT_FALSE(shouldCreateDataFileForRotation(7, 10, 4, 10, createdInWindow));
+  TEST_ASSERT_FALSE(createdInWindow);
+
+  TEST_ASSERT_TRUE(shouldCreateDataFileForRotation(8, 10, 4, 10, createdInWindow));
+  TEST_ASSERT_TRUE(createdInWindow);
+
+  TEST_ASSERT_FALSE(shouldCreateDataFileForRotation(8, 10, 4, 10, createdInWindow));
+  TEST_ASSERT_TRUE(createdInWindow);
+
+  TEST_ASSERT_FALSE(shouldCreateDataFileForRotation(8, 11, 4, 10, createdInWindow));
+  TEST_ASSERT_FALSE(createdInWindow);
+
+  TEST_ASSERT_FALSE(shouldCreateDataFileForRotation(12, 10, 0, 10, createdInWindow));
+}
+
+void test_turbo_fault_check_decisions()
+{
+  uint8_t badCount = 0;
+
+  TEST_ASSERT_EQUAL(static_cast<int>(TurboFaultDecision::None),
+                    static_cast<int>(updateTurboFaultCheck(false, false, 2, badCount)));
+  TEST_ASSERT_EQUAL_UINT8(1, badCount);
+
+  TEST_ASSERT_EQUAL(static_cast<int>(TurboFaultDecision::None),
+                    static_cast<int>(updateTurboFaultCheck(false, false, 2, badCount)));
+  TEST_ASSERT_EQUAL_UINT8(2, badCount);
+
+  TEST_ASSERT_EQUAL(static_cast<int>(TurboFaultDecision::Shutdown),
+                    static_cast<int>(updateTurboFaultCheck(false, false, 2, badCount)));
+  TEST_ASSERT_EQUAL_UINT8(0, badCount);
+
+  badCount = 2;
+  TEST_ASSERT_EQUAL(static_cast<int>(TurboFaultDecision::ResetWindow),
+                    static_cast<int>(updateTurboFaultCheck(false, true, 2, badCount)));
+  TEST_ASSERT_EQUAL_UINT8(1, badCount);
+
+  TEST_ASSERT_EQUAL(static_cast<int>(TurboFaultDecision::ResetWindow),
+                    static_cast<int>(updateTurboFaultCheck(true, true, 2, badCount)));
+  TEST_ASSERT_EQUAL_UINT8(0, badCount);
+}
+
 int main()
 {
   UNITY_BEGIN();
@@ -102,5 +174,10 @@ int main()
   RUN_TEST(test_rejects_invalid_time_sync_command);
   RUN_TEST(test_state_status_codes);
   RUN_TEST(test_state_on_off_mapping);
+  RUN_TEST(test_format_rga_mass_rows);
+  RUN_TEST(test_format_rga_total_pressure_rows);
+  RUN_TEST(test_format_rga_rows_report_truncation);
+  RUN_TEST(test_data_file_rotation_window);
+  RUN_TEST(test_turbo_fault_check_decisions);
   return UNITY_END();
 }

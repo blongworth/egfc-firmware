@@ -18,7 +18,7 @@ Current hardware-facing features:
 - Turbopump target-speed control, startup, shutdown, and health checks.
 - SD logging with timed file rotation.
 - Ethernet/UDP surface communication by default.
-- Native PlatformIO tests for command parsing and state/status mapping.
+- Native PlatformIO tests for command parsing, RGA acquisition, turbopump protocol handling, data formatting, rotation decisions, and fault-counting logic.
 
 ADV and valve-control code have been removed.
 
@@ -32,7 +32,10 @@ ADV and valve-control code have been removed.
 - `lib/LanderCore`: Arduino-independent state and surface-command parsing code.
 - `lib/SurfaceLink`: surface transport wrapper. Builds for UDP when `USE_ETHERNET` is defined, otherwise uses a serial stream.
 - `lib/DataLogger`: SD initialization, file creation/rotation, and line-oriented writes.
-- `test/test_lander_core`: native Unity tests for protocol parsing and state/status behavior.
+- `test/test_lander_core`: native Unity tests for protocol parsing, state/status behavior, data row formatting, SD rotation decisions, and turbo fault-counting logic.
+- `test/test_rga_controller`: native Unity tests for the RGA serial protocol and nonblocking scan state machine.
+- `test/test_turbo_pump`: native Unity tests for turbopump command generation, status parsing, readiness checks, and response failures.
+- `test/support`: native Arduino/serial fakes used by hardware-facing module tests.
 
 ## Configuration
 
@@ -42,6 +45,10 @@ Important values:
 
 - RGA masses: `2, 15, 16, 18, 28, 30, 32, 33, 34, 40, 44`
 - RGA serial port: `Serial4` at `28800`, configured in `src/lander.cpp` through `RGA_SERIAL`
+- RGA filament emission current: `1.00 mA`
+- RGA total pressure readout: enabled; one `TP?` reading is appended after each mass scan cycle
+- RGA mass-filter parking: disabled after each normal scan cycle, enabled during filament shutdown
+- RGA model mass limit fallback: `100 amu`; startup verifies this with `ID?`
 - Turbopump USB serial baud: `9600`
 - Default turbopump target speed: `1200 Hz`
 - Turbopump max speed used for command scaling: `1500 Hz`
@@ -140,7 +147,7 @@ Status payloads use:
 For detailed status payloads, fields are:
 
 ```text
-errorCode,actualSpeedHz,drivePowerW,driveVoltageV,electronicsTempC,pumpBottomTempC,motorTempC,filamentStatus
+errorCode,actualSpeedHz,drivePowerW,driveVoltageV,electronicsTempC,pumpBottomTempC,motorTempC,filamentStatus,rgaStatusByte,rgaRs232Error,rgaFilamentError,rgaCdemError,rgaQmfError,rgaDetectorError,rgaPowerSupplyError
 ```
 
 If turbopump or RGA status cannot be read, unavailable fields are reported as `-1`.
@@ -153,7 +160,7 @@ Some startup/shutdown status events are retained as numeric payloads for surface
 
 ## RGA Data Format
 
-Each completed RGA scan cycle is stored in an `RGACycleData` struct. Each mass reading is stored as an `RGAMassReading` with the requested mass, current value, validity flag, timeout flag, and timing metadata.
+Each completed RGA scan cycle is stored in an `RGACycleData` struct. Each mass reading is stored as an `RGAMassReading` with the requested mass, current value, validity flag, timeout flag, and timing metadata. Total pressure is stored in the cycle's `RGATotalPressureReading`.
 
 Logged and transmitted RGA rows use:
 
@@ -165,6 +172,18 @@ If a mass read times out:
 
 ```text
 R:<timestamp>,<mass>,timeout
+```
+
+After the configured mass list is scanned, the firmware reads RGA total pressure and logs/transmits:
+
+```text
+TP:<timestamp>,<current>
+```
+
+If the total pressure read times out:
+
+```text
+TP:<timestamp>,timeout
 ```
 
 The active SD file is named:
@@ -183,12 +202,13 @@ The logger creates a new file at boot and rotates files at the configured rotati
 4. Send `!Z11` to start a full measurement sequence.
 5. The firmware sets the turbopump target speed, starts the pump, and polls status at the configured interval until the pump is ready.
 6. Once the turbopump is ready, the firmware starts the RGA filament and enters `Measuring`.
-7. During measurement, the RGA scan cycle runs nonblocking. Completed readings are written to SD and sent to the surface.
+7. During measurement, the RGA scan cycle runs nonblocking. Completed mass readings and the final total-pressure reading are written to SD and sent to the surface. The mass filter is not parked between continuous scan cycles unless `rgaParkAfterCycle` is enabled.
 8. Send `!Z21` or `!Z22` to stop. The firmware turns off the RGA filament, stops the turbopump, polls until the pump speed reaches zero or shutdown timeout expires, then returns to `Idle`.
 
 ## Safety and Fault Handling
 
-- RGA acquisition timeouts are recorded per mass reading instead of blocking the loop indefinitely.
+- RGA acquisition timeouts are recorded per mass and total-pressure reading instead of blocking the loop indefinitely.
+- End-of-cycle mass-filter parking is disabled by default to avoid inserting a blocking settle delay into continuous acquisition.
 - Turbopump startup has a timeout. If the pump does not become ready in time, the firmware begins shutdown.
 - During measurement, repeated bad turbopump readiness checks trigger shutdown.
 - Detailed status reports use `-1` for unavailable values instead of reusing stale readings.

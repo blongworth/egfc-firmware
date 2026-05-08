@@ -14,14 +14,22 @@ RGAConfig rgaConfig = {
   LanderConfig::rgaMasses,
   LanderConfig::rgaMassCount,
   LanderConfig::rgaNoiseFloor,
+  LanderConfig::rgaFilamentEmissionMa,
   LanderConfig::rgaScanResponseTimeoutMs,
   LanderConfig::rgaStatusResponseTimeoutMs,
   LanderConfig::rgaCommandSettleMs,
   LanderConfig::rgaMaxFilamentOffAttempts,
-  true
+  true,
+  LanderConfig::rgaDefaultMaxMass,
+  LanderConfig::rgaNoiseFloorTimeoutsMs,
+  LanderConfig::rgaNoiseFloorTimeoutCount,
+  LanderConfig::rgaMeasureTotalPressure,
+  LanderConfig::rgaParkAfterCycle,
+  LanderConfig::rgaParkOnStop
 };
 RGAController rga(RGA_SERIAL);
 RGACycleData latestRGACycle;
+RGAErrorStatus latestRGAStatus;
 
 TurboPumpConfig turboPumpConfig = {
   LanderConfig::defaultTurboSpeedHz,
@@ -547,8 +555,9 @@ bool buildTurboStatusPayload(char *payload, size_t payloadSize)
   const bool turboStatusValid = turboPump.readFullStatus(latestTurboStatus);
   float filamentStatus = -1.0f;
   const bool filamentStatusValid = rga.readFilamentStatusBlocking(filamentStatus);
+  const bool rgaStatusValid = rga.readErrorStatusBlocking(latestRGAStatus);
 
-  snprintf(payload, payloadSize, "%d,%d,%d,%d,%d,%d,%d,%.2f",
+  snprintf(payload, payloadSize, "%d,%d,%d,%d,%d,%d,%d,%.2f,%d,%d,%d,%d,%d,%d,%d",
            turboStatusValid ? latestTurboStatus.errorCode : -1,
            turboStatusValid ? latestTurboStatus.actualSpeedHz : -1,
            turboStatusValid ? latestTurboStatus.drivePowerW : -1,
@@ -556,9 +565,16 @@ bool buildTurboStatusPayload(char *payload, size_t payloadSize)
            turboStatusValid ? latestTurboStatus.electronicsTempC : -1,
            turboStatusValid ? latestTurboStatus.pumpBottomTempC : -1,
            turboStatusValid ? latestTurboStatus.motorTempC : -1,
-           filamentStatusValid ? filamentStatus : -1.0f);
+           filamentStatusValid ? filamentStatus : -1.0f,
+           rgaStatusValid ? latestRGAStatus.statusByte : -1,
+           rgaStatusValid ? latestRGAStatus.rs232Error : -1,
+           rgaStatusValid ? latestRGAStatus.filamentError : -1,
+           rgaStatusValid ? latestRGAStatus.cdemError : -1,
+           rgaStatusValid ? latestRGAStatus.qmfError : -1,
+           rgaStatusValid ? latestRGAStatus.detectorError : -1,
+           rgaStatusValid ? latestRGAStatus.powerSupplyError : -1);
 
-  return turboStatusValid && filamentStatusValid;
+  return turboStatusValid && filamentStatusValid && rgaStatusValid;
 }
 
 void sendOnOffState()
@@ -604,16 +620,32 @@ void logRGACycle(const RGACycleData &cycle)
   for (uint8_t i = 0; i < cycle.readingCount; i++) {
     const RGAMassReading &reading = cycle.readings[i];
     char csvRow[LanderConfig::csvRowSize];
-    if (reading.valid) {
-      snprintf(csvRow, sizeof(csvRow), "R:%s,%u,%ld",
-               timestamp, reading.mass, static_cast<long>(reading.current));
-    } else {
-      snprintf(csvRow, sizeof(csvRow), "R:%s,%u,timeout", timestamp, reading.mass);
+    if (!formatRgaMassRow(csvRow,
+                          sizeof(csvRow),
+                          timestamp,
+                          reading.mass,
+                          static_cast<long>(reading.current),
+                          reading.valid)) {
+      continue;
     }
 
     Serial.println(csvRow);
     dataLogger.writeLine(csvRow, Serial);
     surfaceLink.sendText(csvRow);
+  }
+
+  const RGATotalPressureReading &totalPressure = cycle.totalPressure;
+  if (totalPressure.valid || totalPressure.timedOut) {
+    char csvRow[LanderConfig::csvRowSize];
+    if (formatRgaTotalPressureRow(csvRow,
+                                  sizeof(csvRow),
+                                  timestamp,
+                                  static_cast<long>(totalPressure.current),
+                                  totalPressure.valid)) {
+      Serial.println(csvRow);
+      dataLogger.writeLine(csvRow, Serial);
+      surfaceLink.sendText(csvRow);
+    }
   }
 
   if (cycle.hasTimeout) {
@@ -624,24 +656,22 @@ void logRGACycle(const RGACycleData &cycle)
 
 void checkTurboAfterRGACycle(uint16_t turboSpeedHz)
 {
-  if (!turboPump.isReady(turboSpeedHz, latestTurboStatus, &Serial)) {
+  const bool turboReady = turboPump.isReady(turboSpeedHz, latestTurboStatus, &Serial);
+  if (!turboReady) {
     Serial.println("Turbo problem detected");
-    if (turboBadCheckTimer > LanderConfig::turboBadCheckWindowMs) {
-      turboBadCheckCount = 1;
-      turboBadCheckTimer = 0;
-    } else {
-      turboBadCheckCount++;
-      if (turboBadCheckCount > LanderConfig::turboBadCheckLimit) {
-        Serial.println("Turbo problem stop GEMS!");
-        sendStatusMessage(5);
-        turboBadCheckCount = 0;
-        turboBadCheckTimer = 0;
-        beginShutdown();
-      }
-    }
-  } else if (turboBadCheckTimer > LanderConfig::turboBadCheckWindowMs) {
-    turboBadCheckCount = 0;
+  }
+
+  const TurboFaultDecision decision = updateTurboFaultCheck(turboReady,
+                                                           turboBadCheckTimer > LanderConfig::turboBadCheckWindowMs,
+                                                           LanderConfig::turboBadCheckLimit,
+                                                           turboBadCheckCount);
+  if (decision == TurboFaultDecision::ResetWindow) {
     turboBadCheckTimer = 0;
+  } else if (decision == TurboFaultDecision::Shutdown) {
+    Serial.println("Turbo problem stop GEMS!");
+    sendStatusMessage(5);
+    turboBadCheckTimer = 0;
+    beginShutdown();
   }
 }
 

@@ -1,5 +1,6 @@
 #include "LanderCore.h"
 
+#include <stdio.h>
 #include <string.h>
 
 namespace {
@@ -176,4 +177,79 @@ const char *stateName(LanderState state)
   }
 
   return "Unknown";
+}
+
+bool formatRgaMassRow(char *buffer, size_t bufferSize, const char *timestamp,
+                      uint8_t mass, long current, bool valid)
+{
+  if (buffer == nullptr || bufferSize == 0 || timestamp == nullptr) {
+    return false;
+  }
+
+  const int written = valid
+                    ? snprintf(buffer, bufferSize, "R:%s,%u,%ld", timestamp, mass, current)
+                    : snprintf(buffer, bufferSize, "R:%s,%u,timeout", timestamp, mass);
+  return written >= 0 && static_cast<size_t>(written) < bufferSize;
+}
+
+bool formatRgaTotalPressureRow(char *buffer, size_t bufferSize, const char *timestamp,
+                               long current, bool valid)
+{
+  if (buffer == nullptr || bufferSize == 0 || timestamp == nullptr) {
+    return false;
+  }
+
+  const int written = valid
+                    ? snprintf(buffer, bufferSize, "TP:%s,%ld", timestamp, current)
+                    : snprintf(buffer, bufferSize, "TP:%s,timeout", timestamp);
+  return written >= 0 && static_cast<size_t>(written) < bufferSize;
+}
+
+bool shouldCreateDataFileForRotation(uint8_t hourValue, uint8_t minuteValue,
+                                     uint8_t hourModulo, uint8_t rotationMinute,
+                                     bool &fileCreatedInWindow)
+{
+  if (hourModulo == 0) {
+    return false;
+  }
+
+  const bool inRotationWindow = hourValue % hourModulo == 0 &&
+                                minuteValue == rotationMinute;
+
+  if (inRotationWindow && !fileCreatedInWindow) {
+    fileCreatedInWindow = true;
+    return true;
+  }
+
+  if (!inRotationWindow) {
+    fileCreatedInWindow = false;
+  }
+
+  return false;
+}
+
+TurboFaultDecision updateTurboFaultCheck(bool turboReady, bool checkWindowExpired,
+                                         uint8_t badCheckLimit, uint8_t &badCheckCount)
+{
+  if (!turboReady) {
+    if (checkWindowExpired) {
+      badCheckCount = 1;
+      return TurboFaultDecision::ResetWindow;
+    }
+
+    badCheckCount++;
+    if (badCheckCount > badCheckLimit) {
+      badCheckCount = 0;
+      return TurboFaultDecision::Shutdown;
+    }
+
+    return TurboFaultDecision::None;
+  }
+
+  if (checkWindowExpired) {
+    badCheckCount = 0;
+    return TurboFaultDecision::ResetWindow;
+  }
+
+  return TurboFaultDecision::None;
 }

@@ -3,6 +3,40 @@
 #include <stdlib.h>
 #include <string.h>
 
+namespace {
+constexpr uint8_t RGA_STATUS_RS232 = 1 << 0;
+constexpr uint8_t RGA_STATUS_FILAMENT = 1 << 1;
+constexpr uint8_t RGA_STATUS_CDEM = 1 << 3;
+constexpr uint8_t RGA_STATUS_QMF = 1 << 4;
+constexpr uint8_t RGA_STATUS_DETECTOR = 1 << 5;
+constexpr uint8_t RGA_STATUS_POWER_SUPPLY = 1 << 6;
+
+constexpr float MIN_FILAMENT_CURRENT_MA = 0.02f;
+constexpr float MAX_FILAMENT_CURRENT_MA = 3.50f;
+}
+
+void RGAIdentity::reset()
+{
+  valid = false;
+  maxMass = 0;
+  memset(firmware, 0, sizeof(firmware));
+  memset(serialNumber, 0, sizeof(serialNumber));
+  memset(raw, 0, sizeof(raw));
+}
+
+void RGAErrorStatus::reset()
+{
+  sampledAtMs = 0;
+  valid = false;
+  statusByte = 0;
+  rs232Error = -1;
+  filamentError = -1;
+  cdemError = -1;
+  qmfError = -1;
+  detectorError = -1;
+  powerSupplyError = -1;
+}
+
 void RGACycleData::reset(uint32_t number, unsigned long nowMs)
 {
   cycleNumber = number;
@@ -15,6 +49,8 @@ void RGACycleData::reset(uint32_t number, unsigned long nowMs)
   for (uint8_t i = 0; i < RGA_MAX_MASSES; i++) {
     readings[i] = RGAMassReading();
   }
+
+  totalPressure = RGATotalPressureReading();
 }
 
 RGAController::RGAController(Stream &serial)
@@ -34,9 +70,16 @@ const RGAConfig &RGAController::config() const
 
 bool RGAController::configValid() const
 {
+  const bool filamentCurrentValid = config_.filamentEmissionMa == 0.0f ||
+                                    (config_.filamentEmissionMa >= MIN_FILAMENT_CURRENT_MA &&
+                                     config_.filamentEmissionMa <= MAX_FILAMENT_CURRENT_MA);
+
   return config_.masses != nullptr &&
          config_.massCount > 0 &&
-         config_.massCount <= RGA_MAX_MASSES;
+         config_.massCount <= RGA_MAX_MASSES &&
+         config_.noiseFloor <= 7 &&
+         filamentCurrentValid &&
+         validateMassList(activeMaxMass());
 }
 
 void RGAController::flushInput(uint16_t settleMs)
@@ -54,27 +97,53 @@ bool RGAController::initializeBlocking(uint8_t &statusByte, Print *log)
 {
   cancelAcquisition();
   statusByte = 0;
+  identity_.reset();
+  lastErrorStatus_.reset();
   flushInput(100);
 
   serial_.write('\r');
   delay(100);
   serial_.write('\r');
   delay(100);
-  serial_.write("IN0\r");
+  flushInput();
 
-  if (!waitForAvailable(1, config_.statusResponseTimeoutMs)) {
+  if (!queryIdentityBlocking(identity_)) {
     if (log) {
-      log->println("RGA IN0 status timed out");
+      log->println("RGA ID? timed out or returned an invalid identity");
     }
     return false;
   }
 
-  statusByte = static_cast<uint8_t>(serial_.read());
-  flushInput(100);
+  if (log) {
+    log->print("RGA ID: ");
+    log->println(identity_.raw);
+  }
 
-  if (!sendCommandForAck("FL0\r", 3)) {
+  if (!configValid()) {
     if (log) {
-      log->println("RGA FL0 status timed out");
+      log->println("RGA config invalid for detected model");
+    }
+    return false;
+  }
+
+  if (!sendStatusCommand("IN0\r", statusByte)) {
+    if (log) {
+      log->println("RGA IN0 returned error status or timed out");
+    }
+    return false;
+  }
+
+  if (!parkMassFilterBlocking()) {
+    if (log) {
+      log->println("RGA MR0 command timed out");
+    }
+    return false;
+  }
+
+  uint8_t filamentStatus = 0;
+  if (!sendStatusCommand("FL0.00\r", filamentStatus)) {
+    if (log) {
+      log->println("RGA FL0.00 returned error status or timed out");
     }
     return false;
   }
@@ -86,22 +155,29 @@ bool RGAController::startFilamentBlocking(Print *log)
 {
   cancelAcquisition();
   flushInput(100);
+  parkMassFilterBlocking();
 
-  if (log) {
-    log->println("Turning on RGA filament");
-  }
-  if (!sendCommandForAck("FL1\r", 3)) {
+  if (!configValid()) {
+    if (log) {
+      log->println("RGA config invalid");
+    }
     return false;
   }
 
   if (log) {
-    log->println("Clearing RGA electrometer");
-  }
-  if (!sendCommandForAck("CL\r", 3)) {
-    return false;
+    log->print("Turning on RGA filament at ");
+    log->print(config_.filamentEmissionMa, 2);
+    log->println(" mA");
   }
 
-  if (!sendCommandForAck("CA\r", 3)) {
+  char filamentCommand[16];
+  snprintf(filamentCommand, sizeof(filamentCommand), "FL%.2f\r", config_.filamentEmissionMa);
+  uint8_t statusByte = 0;
+  if (!retryStatusCommand(filamentCommand, statusByte)) {
+    if (log) {
+      log->print("RGA FL status error: ");
+      log->println(statusByte, BIN);
+    }
     return false;
   }
 
@@ -112,10 +188,27 @@ bool RGAController::startFilamentBlocking(Print *log)
     return false;
   }
 
-  if (log) {
-    log->println("Zeroing RGA electrometer");
+  if (config_.measureTotalPressure) {
+    if (log) {
+      log->println("Enabling RGA total pressure measurement");
+    }
+    if (!retryStatusCommand("TP1\r", statusByte)) {
+      if (log) {
+        log->print("RGA TP1 status error: ");
+        log->println(statusByte, BIN);
+      }
+      return false;
+    }
   }
-  if (!sendCommandForAck("CA\r", 3)) {
+
+  if (log) {
+    log->println("Zeroing RGA detector and updating scan parameters");
+  }
+  if (!retryStatusCommand("CA\r", statusByte)) {
+    if (log) {
+      log->print("RGA CA status error: ");
+      log->println(statusByte, BIN);
+    }
     return false;
   }
 
@@ -125,16 +218,25 @@ bool RGAController::startFilamentBlocking(Print *log)
 bool RGAController::stopFilamentBlocking(Print *log)
 {
   cancelAcquisition();
+  if (config_.parkOnStop) {
+    parkMassFilterBlocking();
+  }
+
+  if (config_.measureTotalPressure) {
+    uint8_t totalPressureStatus = 0;
+    sendStatusCommand("TP0\r", totalPressureStatus);
+  }
 
   for (uint8_t attempt = 0; attempt < config_.maxFilamentOffAttempts; attempt++) {
     if (log) {
       log->println("Turning off RGA filament");
     }
 
-    sendCommandForAck("FL0\r", 3);
+    uint8_t statusByte = 0;
+    sendStatusCommand("FL0.00\r", statusByte);
 
     float status = -1.0f;
-    if (readFilamentStatusBlocking(status) && status == 0.0f) {
+    if (readFilamentStatusBlocking(status) && status <= 0.01f) {
       return true;
     }
 
@@ -146,16 +248,116 @@ bool RGAController::stopFilamentBlocking(Print *log)
 
 bool RGAController::readFilamentStatusBlocking(float &status)
 {
-  return readStatusFloatBlocking("FL?\r", 1, 4, status);
+  return readAsciiFloatBlocking("FL?\r", status);
+}
+
+bool RGAController::readTotalPressureBlocking(int32_t &current)
+{
+  uint8_t statusByte = 0;
+  if (!retryStatusCommand("TP1\r", statusByte)) {
+    return false;
+  }
+
+  uint8_t buffer[4] = {0, 0, 0, 0};
+  flushInput();
+  serial_.write("TP?\r");
+
+  if (!readBytesWithTimeout(buffer, sizeof(buffer), currentScanTimeoutMs())) {
+    return false;
+  }
+
+  current = decodeCurrent(buffer);
+  return true;
 }
 
 bool RGAController::setNoiseFloorBlocking(uint8_t noiseFloor)
 {
+  if (noiseFloor > 7) {
+    return false;
+  }
+
   char command[10];
   snprintf(command, sizeof(command), "NF%u\r", noiseFloor);
-  serial_.write(command);
-  delay(config_.commandSettleMs);
+
+  uint8_t statusByte = 0;
+  if (!retryStatusCommand(command, statusByte)) {
+    return false;
+  }
+
+  config_.noiseFloor = noiseFloor;
   return true;
+}
+
+bool RGAController::parkMassFilterBlocking()
+{
+  return sendNoResponseCommand("MR0\r");
+}
+
+bool RGAController::queryIdentityBlocking(RGAIdentity &identity)
+{
+  char line[sizeof(identity.raw)];
+  memset(line, 0, sizeof(line));
+
+  flushInput();
+  serial_.write("ID?\r");
+  if (!readAsciiLine(line, sizeof(line), config_.statusResponseTimeoutMs)) {
+    return false;
+  }
+
+  return parseIdentity(line, identity);
+}
+
+bool RGAController::readErrorStatusBlocking(RGAErrorStatus &status)
+{
+  status.reset();
+  status.sampledAtMs = millis();
+
+  int statusByte = 0;
+  if (!readAsciiIntBlocking("ER?\r", statusByte)) {
+    return false;
+  }
+
+  status.statusByte = static_cast<uint8_t>(statusByte & 0xFF);
+  status.rs232Error = 0;
+  status.filamentError = 0;
+  status.cdemError = 0;
+  status.qmfError = 0;
+  status.detectorError = 0;
+  status.powerSupplyError = 0;
+  bool ok = true;
+
+  if (status.statusByte & RGA_STATUS_RS232) {
+    ok = readAsciiIntBlocking("EC?\r", status.rs232Error) && ok;
+  }
+  if (status.statusByte & RGA_STATUS_FILAMENT) {
+    ok = readAsciiIntBlocking("EF?\r", status.filamentError) && ok;
+  }
+  if (status.statusByte & RGA_STATUS_CDEM) {
+    ok = readAsciiIntBlocking("EM?\r", status.cdemError) && ok;
+  }
+  if (status.statusByte & RGA_STATUS_QMF) {
+    ok = readAsciiIntBlocking("EQ?\r", status.qmfError) && ok;
+  }
+  if (status.statusByte & RGA_STATUS_DETECTOR) {
+    ok = readAsciiIntBlocking("ED?\r", status.detectorError) && ok;
+  }
+  if (status.statusByte & RGA_STATUS_POWER_SUPPLY) {
+    ok = readAsciiIntBlocking("EP?\r", status.powerSupplyError) && ok;
+  }
+
+  status.valid = ok;
+  lastErrorStatus_ = status;
+  return ok;
+}
+
+const RGAIdentity &RGAController::identity() const
+{
+  return identity_;
+}
+
+const RGAErrorStatus &RGAController::lastErrorStatus() const
+{
+  return lastErrorStatus_;
 }
 
 void RGAController::cancelAcquisition()
@@ -202,21 +404,46 @@ void RGAController::update()
     case State::WaitResponse:
       break;
 
+    case State::SendTotalPressureCommand:
+      sendTotalPressureCommand();
+      return;
+
+    case State::WaitTotalPressureCommandSettle:
+      if (nowMs - commandStartedAtMs_ < config_.commandSettleMs) {
+        return;
+      }
+      state_ = State::WaitTotalPressureResponse;
+      break;
+
+    case State::WaitTotalPressureResponse:
+      break;
+
     case State::Idle:
       return;
   }
+
+  const bool readingTotalPressure = state_ == State::WaitTotalPressureResponse;
 
   while (serial_.available() > 0 && responseIndex_ < sizeof(response_)) {
     response_[responseIndex_++] = static_cast<uint8_t>(serial_.read());
   }
 
   if (responseIndex_ == sizeof(response_)) {
-    finishCurrentMass(decodeCurrent(response_), true, false);
+    const int32_t current = decodeCurrent(response_);
+    if (readingTotalPressure) {
+      finishTotalPressure(current, true, false);
+    } else {
+      finishCurrentMass(current, true, false);
+    }
     return;
   }
 
-  if (nowMs - commandStartedAtMs_ >= config_.scanResponseTimeoutMs) {
-    finishCurrentMass(0, false, true);
+  if (nowMs - commandStartedAtMs_ >= currentScanTimeoutMs()) {
+    if (readingTotalPressure) {
+      finishTotalPressure(0, false, true);
+    } else {
+      finishCurrentMass(0, false, true);
+    }
   }
 }
 
@@ -245,9 +472,12 @@ RGAController::AcquisitionState RGAController::acquisitionState() const
 {
   switch (state_) {
     case State::WaitCommandSettle:
+    case State::WaitTotalPressureCommandSettle:
       return AcquisitionState::WaitCommandSettle;
     case State::WaitResponse:
     case State::SendMassCommand:
+    case State::SendTotalPressureCommand:
+    case State::WaitTotalPressureResponse:
       return AcquisitionState::WaitResponse;
     case State::Idle:
     default:
@@ -282,6 +512,29 @@ void RGAController::sendCurrentMassCommand()
   state_ = State::WaitCommandSettle;
 }
 
+void RGAController::sendTotalPressureCommand()
+{
+  if (!config_.measureTotalPressure) {
+    finishCycle();
+    return;
+  }
+
+  if (config_.flushBeforeScan) {
+    flushInput();
+  }
+
+  RGATotalPressureReading &reading = activeCycle_.totalPressure;
+  reading = RGATotalPressureReading();
+  reading.requestedAtMs = millis();
+
+  serial_.write("TP?\r");
+
+  responseIndex_ = 0;
+  memset(response_, 0, sizeof(response_));
+  commandStartedAtMs_ = reading.requestedAtMs;
+  state_ = State::WaitTotalPressureCommandSettle;
+}
+
 void RGAController::finishCurrentMass(int32_t current, bool valid, bool timedOut)
 {
   RGAMassReading &reading = activeCycle_.readings[massIndex_];
@@ -299,10 +552,30 @@ void RGAController::finishCurrentMass(int32_t current, bool valid, bool timedOut
   responseIndex_ = 0;
 
   if (massIndex_ >= config_.massCount) {
-    finishCycle();
+    if (config_.measureTotalPressure) {
+      state_ = State::SendTotalPressureCommand;
+    } else {
+      finishCycle();
+    }
   } else {
     state_ = State::SendMassCommand;
   }
+}
+
+void RGAController::finishTotalPressure(int32_t current, bool valid, bool timedOut)
+{
+  RGATotalPressureReading &reading = activeCycle_.totalPressure;
+  reading.current = current;
+  reading.valid = valid;
+  reading.timedOut = timedOut;
+  reading.completedAtMs = millis();
+
+  if (timedOut) {
+    activeCycle_.hasTimeout = true;
+  }
+
+  responseIndex_ = 0;
+  finishCycle();
 }
 
 void RGAController::finishCycle()
@@ -314,64 +587,112 @@ void RGAController::finishCycle()
   state_ = State::Idle;
   massIndex_ = 0;
   responseIndex_ = 0;
+  if (config_.parkAfterCycle) {
+    parkMassFilterBlocking();
+  }
 }
 
-bool RGAController::sendCommandForAck(const char *command, uint8_t responseBytes)
+bool RGAController::sendStatusCommand(const char *command, uint8_t &statusByte)
 {
   flushInput();
   serial_.write(command);
 
-  if (responseBytes == 0) {
-    delay(config_.commandSettleMs);
-    return true;
-  }
-
-  uint8_t buffer[8];
-  if (responseBytes > sizeof(buffer)) {
-    responseBytes = sizeof(buffer);
-  }
-
-  return readBytesWithTimeout(buffer, responseBytes, config_.statusResponseTimeoutMs);
-}
-
-bool RGAController::readStatusFloatBlocking(const char *command, uint8_t from, uint8_t to, float &value)
-{
-  if (to <= from) {
+  if (!readStatusByte(statusByte)) {
     return false;
   }
 
-  char response[30];
-  memset(response, 0, sizeof(response));
+  lastCommandStatusByte_ = statusByte;
+  if (statusByte != 0) {
+    readErrorStatusBlocking(lastErrorStatus_);
+    return false;
+  }
 
+  return true;
+}
+
+bool RGAController::retryStatusCommand(const char *command, uint8_t &statusByte)
+{
+  if (sendStatusCommand(command, statusByte)) {
+    return true;
+  }
+
+  delay(config_.commandSettleMs);
+  return sendStatusCommand(command, statusByte);
+}
+
+bool RGAController::sendNoResponseCommand(const char *command)
+{
   flushInput();
   serial_.write(command);
+  delay(config_.commandSettleMs);
+  return true;
+}
 
+bool RGAController::readStatusByte(uint8_t &statusByte)
+{
+  return readBytesWithTimeout(&statusByte, 1, config_.statusResponseTimeoutMs);
+}
+
+bool RGAController::readAsciiLine(char *buffer, size_t bufferSize, uint16_t timeoutMs)
+{
+  if (buffer == nullptr || bufferSize == 0) {
+    return false;
+  }
+
+  buffer[0] = '\0';
   const unsigned long startMs = millis();
-  uint8_t index = 0;
-  while (millis() - startMs < config_.statusResponseTimeoutMs && index < sizeof(response) - 1) {
+  size_t index = 0;
+
+  while (millis() - startMs < timeoutMs && index < bufferSize - 1) {
     if (serial_.available() > 0) {
-      char c = static_cast<char>(serial_.read());
-      if (c == '\r') {
-        break;
+      const char c = static_cast<char>(serial_.read());
+      if (c == '\r' || c == '\n') {
+        if (index == 0) {
+          continue;
+        }
+        buffer[index] = '\0';
+        consumeLineTerminators();
+        return true;
       }
-      response[index++] = c;
+      buffer[index++] = c;
     } else {
       yield();
     }
   }
 
-  if (index == 0 || to > index) {
+  buffer[index] = '\0';
+  return false;
+}
+
+bool RGAController::readAsciiFloatBlocking(const char *command, float &value)
+{
+  char response[24];
+  memset(response, 0, sizeof(response));
+
+  flushInput();
+  serial_.write(command);
+
+  if (!readAsciiLine(response, sizeof(response), config_.statusResponseTimeoutMs)) {
     return false;
   }
 
-  char field[16];
-  uint8_t fieldLength = to - from;
-  if (fieldLength >= sizeof(field)) {
-    fieldLength = sizeof(field) - 1;
+  value = static_cast<float>(atof(response));
+  return true;
+}
+
+bool RGAController::readAsciiIntBlocking(const char *command, int &value)
+{
+  char response[16];
+  memset(response, 0, sizeof(response));
+
+  flushInput();
+  serial_.write(command);
+
+  if (!readAsciiLine(response, sizeof(response), config_.statusResponseTimeoutMs)) {
+    return false;
   }
-  memcpy(field, response + from, fieldLength);
-  field[fieldLength] = '\0';
-  value = static_cast<float>(atof(field));
+
+  value = atoi(response);
   return true;
 }
 
@@ -391,14 +712,92 @@ bool RGAController::readBytesWithTimeout(uint8_t *buffer, uint8_t length, uint16
   return index == length;
 }
 
-bool RGAController::waitForAvailable(uint8_t length, uint16_t timeoutMs)
+void RGAController::consumeLineTerminators()
 {
   const unsigned long startMs = millis();
-  while (serial_.available() < length && millis() - startMs < timeoutMs) {
-    yield();
+  while (millis() - startMs < 2) {
+    if (serial_.available() <= 0) {
+      yield();
+      continue;
+    }
+
+    const int next = serial_.peek();
+    if (next == '\r' || next == '\n') {
+      serial_.read();
+      continue;
+    }
+    return;
+  }
+}
+
+bool RGAController::parseIdentity(const char *line, RGAIdentity &identity) const
+{
+  identity.reset();
+
+  if (line == nullptr || strncmp(line, "SRSRGA", 6) != 0) {
+    return false;
   }
 
-  return serial_.available() >= length;
+  const char *version = strstr(line, "VER");
+  const char *serial = strstr(line, "SN");
+  if (version == nullptr || serial == nullptr || serial <= version) {
+    return false;
+  }
+
+  identity.maxMass = static_cast<uint16_t>(atoi(line + 6));
+  if (identity.maxMass == 0) {
+    return false;
+  }
+
+  const size_t versionLength = min(static_cast<size_t>(serial - (version + 3)),
+                                   sizeof(identity.firmware) - 1);
+  memcpy(identity.firmware, version + 3, versionLength);
+  identity.firmware[versionLength] = '\0';
+
+  strncpy(identity.serialNumber, serial + 2, sizeof(identity.serialNumber) - 1);
+  identity.serialNumber[sizeof(identity.serialNumber) - 1] = '\0';
+
+  strncpy(identity.raw, line, sizeof(identity.raw) - 1);
+  identity.raw[sizeof(identity.raw) - 1] = '\0';
+  identity.valid = true;
+  return true;
+}
+
+bool RGAController::validateMassList(uint16_t maxMass) const
+{
+  if (config_.masses == nullptr || maxMass == 0) {
+    return false;
+  }
+
+  for (uint8_t i = 0; i < config_.massCount; i++) {
+    if (config_.masses[i] == 0 || config_.masses[i] > maxMass) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+uint16_t RGAController::activeMaxMass() const
+{
+  if (identity_.valid && identity_.maxMass > 0) {
+    return identity_.maxMass;
+  }
+
+  return config_.defaultMaxMass;
+}
+
+uint16_t RGAController::currentScanTimeoutMs() const
+{
+  if (config_.noiseFloorTimeoutsMs != nullptr &&
+      config_.noiseFloor < config_.noiseFloorTimeoutCount) {
+    const uint16_t timeoutMs = config_.noiseFloorTimeoutsMs[config_.noiseFloor];
+    if (timeoutMs > 0) {
+      return timeoutMs;
+    }
+  }
+
+  return config_.scanResponseTimeoutMs;
 }
 
 int32_t RGAController::decodeCurrent(const uint8_t bytes[4]) const

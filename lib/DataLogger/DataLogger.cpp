@@ -1,5 +1,7 @@
 #include "DataLogger.h"
 
+#include <LanderCore.h>
+
 bool DataLogger::begin(uint8_t chipSelect, Print &log)
 {
   log.println("Initializing SD card...");
@@ -39,14 +41,12 @@ void DataLogger::serviceRotation(time_t timestamp, uint8_t hourModulo, uint8_t r
     return;
   }
 
-  const bool inRotationWindow = hour(timestamp) % hourModulo == 0 &&
-                                minute(timestamp) == rotationMinute;
-
-  if (inRotationWindow && !fileCreatedInWindow_) {
+  if (shouldCreateDataFileForRotation(hour(timestamp),
+                                      minute(timestamp),
+                                      hourModulo,
+                                      rotationMinute,
+                                      fileCreatedInWindow_)) {
     createNewFile(timestamp, log);
-    fileCreatedInWindow_ = true;
-  } else if (!inRotationWindow) {
-    fileCreatedInWindow_ = false;
   }
 }
 

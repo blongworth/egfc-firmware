@@ -8,10 +8,17 @@ constexpr uint8_t rgaMasses[] = {2, 15, 16, 18, 28, 30, 32, 33, 34, 40, 44};
 constexpr uint8_t rgaMassCount = sizeof(rgaMasses) / sizeof(rgaMasses[0]);
 
 constexpr uint8_t rgaNoiseFloor = 2;
+constexpr float rgaFilamentEmissionMa = 1.0f;
 constexpr uint16_t rgaScanResponseTimeoutMs = 3000;
 constexpr uint16_t rgaStatusResponseTimeoutMs = 1000;
 constexpr uint16_t rgaCommandSettleMs = 25;
 constexpr uint8_t rgaMaxFilamentOffAttempts = 5;
+constexpr uint16_t rgaDefaultMaxMass = 100;
+constexpr uint16_t rgaNoiseFloorTimeoutsMs[] = {12000, 6000, 3000, 2000, 1500, 1200, 1000, 1000};
+constexpr uint8_t rgaNoiseFloorTimeoutCount = sizeof(rgaNoiseFloorTimeoutsMs) / sizeof(rgaNoiseFloorTimeoutsMs[0]);
+constexpr bool rgaMeasureTotalPressure = true;
+constexpr bool rgaParkAfterCycle = false;
+constexpr bool rgaParkOnStop = true;
 
 constexpr uint16_t defaultTurboSpeedHz = 1200;
 constexpr uint16_t turboMaxSpeedHz = 1500;
