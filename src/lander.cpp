@@ -95,7 +95,8 @@ struct TurboStartupService {
     Idle,
     SetSpeed,
     StartPump,
-    WaitReady
+    WaitReady,
+    WaitRgaStartDelay
   };
 
   Phase phase = Phase::Idle;
@@ -109,6 +110,8 @@ struct ShutdownService {
   enum class Phase : uint8_t {
     Idle,
     StopFilament,
+    WaitRgaCooldown,
+    StopTurbo,
     WaitTurboStop
   };
 
@@ -131,6 +134,7 @@ void handleSurfaceCommand(const SurfaceCommand &command);
 void requestStartSystem();
 void requestTurboStartOnly();
 void requestStopSystem();
+void requestStopFilament();
 void requestRgaStartIfReady();
 void beginTurboStartup(uint16_t targetSpeedHz, bool startRgaWhenReady);
 void serviceTurboStartup();
@@ -268,8 +272,7 @@ void handleSurfaceCommand(const SurfaceCommand &command)
 {
   switch (command.type) {
     case SurfaceCommandType::StopFilament:
-      Serial.println("Filament off requested");
-      Serial.println(rga.stopFilamentBlocking(&Serial) ? "RGA filament off" : "RGA filament off timed out");
+      requestStopFilament();
       break;
 
     case SurfaceCommandType::StopSystem:
@@ -321,11 +324,25 @@ void handleSurfaceCommand(const SurfaceCommand &command)
 
 void requestStartSystem()
 {
+  if (turboStartup.phase == TurboStartupService::Phase::WaitRgaStartDelay) {
+    Serial.println("RGA start already pending");
+    return;
+  }
+
   beginTurboStartup(targetTurboSpeedHz, true);
 }
 
 void requestTurboStartOnly()
 {
+  if (turboStartup.phase == TurboStartupService::Phase::WaitRgaStartDelay) {
+    turboStartup.phase = TurboStartupService::Phase::Idle;
+    turboStartup.startRgaWhenReady = false;
+    setLanderState(LanderState::TurboRunning);
+    Serial.println("Canceled pending RGA start");
+    sendOnOffState();
+    return;
+  }
+
   beginTurboStartup(targetTurboSpeedHz, false);
 }
 
@@ -334,20 +351,60 @@ void requestStopSystem()
   beginShutdown();
 }
 
+void requestStopFilament()
+{
+  if (turboStartup.phase == TurboStartupService::Phase::WaitRgaStartDelay) {
+    turboStartup.phase = TurboStartupService::Phase::Idle;
+    turboStartup.startRgaWhenReady = false;
+    setLanderState(LanderState::TurboRunning);
+    Serial.println("Canceled pending RGA start");
+    sendOnOffState();
+    return;
+  }
+
+  if (turboStartup.phase != TurboStartupService::Phase::Idle) {
+    turboStartup.startRgaWhenReady = false;
+  }
+
+  rga.cancelAcquisition();
+
+  Serial.println("Filament off requested");
+  const bool stopped = rga.stopFilamentBlocking(&Serial);
+  Serial.println(stopped ? "RGA filament off" : "RGA filament off timed out");
+
+  if (stopped) {
+    if (landerState == LanderState::Measuring || landerState == LanderState::RgaReadyCheck) {
+      setLanderState(LanderState::TurboRunning);
+      sendOnOffState();
+    }
+  } else {
+    setLanderState(LanderState::Error);
+    sendOnOffState();
+  }
+}
+
 void requestRgaStartIfReady()
 {
+  const LanderState previousState = landerState;
+
+  if (turboStartup.phase == TurboStartupService::Phase::WaitRgaStartDelay) {
+    turboStartup.phase = TurboStartupService::Phase::Idle;
+    setLanderState(LanderState::TurboRunning);
+  }
+
   setLanderState(LanderState::RgaReadyCheck);
   if (turboPump.isReady(targetTurboSpeedHz, latestTurboStatus, &Serial)) {
     startRGA();
   } else {
     Serial.println("Turbo not ready!");
-    setLanderState(LanderState::Idle);
+    setLanderState(previousState == LanderState::TurboRunning ? LanderState::TurboRunning : LanderState::Idle);
   }
 }
 
 void beginTurboStartup(uint16_t targetSpeedHz, bool startRgaWhenReady)
 {
-  if (landerState == LanderState::Stopping) {
+  if (landerState == LanderState::Stopping || landerState == LanderState::Measuring ||
+      landerState == LanderState::RgaReadyCheck || turboStartup.phase != TurboStartupService::Phase::Idle) {
     return;
   }
 
@@ -406,10 +463,14 @@ void serviceTurboStartup()
       const bool ready = turboPump.isReady(turboStartup.targetSpeedHz, latestTurboStatus, &Serial);
       if (ready) {
         Serial.println("Turbo check final:1");
-        turboStartup.phase = TurboStartupService::Phase::Idle;
         if (turboStartup.startRgaWhenReady) {
-          startRGA();
+          turboStartup.phase = TurboStartupService::Phase::WaitRgaStartDelay;
+          turboStartup.startedAtMs = nowMs;
+          turboStartup.lastStatusAtMs = 0;
+          setLanderState(LanderState::TurboRunning);
+          Serial.println("Waiting before RGA start");
         } else {
+          turboStartup.phase = TurboStartupService::Phase::Idle;
           setLanderState(LanderState::TurboRunning);
         }
         return;
@@ -420,6 +481,24 @@ void serviceTurboStartup()
         Serial.println("Turbo failed to start, stopping turbo");
         sendStatusMessage(5);
         turboStartup.phase = TurboStartupService::Phase::Idle;
+        beginShutdown();
+      }
+      return;
+    }
+
+    case TurboStartupService::Phase::WaitRgaStartDelay: {
+      const unsigned long nowMs = millis();
+      if (nowMs - turboStartup.startedAtMs < LanderConfig::rgaStartDelayAfterTurboReadyMs) {
+        return;
+      }
+
+      turboStartup.phase = TurboStartupService::Phase::Idle;
+      sendStatusMessage(3);
+      if (turboPump.isReady(turboStartup.targetSpeedHz, latestTurboStatus, &Serial)) {
+        startRGA();
+      } else {
+        Serial.println("Turbo no longer ready after RGA start delay");
+        sendStatusMessage(5);
         beginShutdown();
       }
       return;
@@ -453,8 +532,26 @@ void serviceShutdown()
   switch (shutdownService.phase) {
     case ShutdownService::Phase::StopFilament:
       sendStatusMessage(6);
+      rga.cancelAcquisition();
       Serial.println(rga.stopFilamentBlocking(&Serial) ? "Filament off" : "RGA filament off timed out");
       sendStatusMessage(3);
+      shutdownService.phase = ShutdownService::Phase::WaitRgaCooldown;
+      shutdownService.startedAtMs = millis();
+      shutdownService.lastStatusAtMs = 0;
+      Serial.println("Waiting before turbo stop");
+      return;
+
+    case ShutdownService::Phase::WaitRgaCooldown: {
+      const unsigned long nowMs = millis();
+      if (nowMs - shutdownService.startedAtMs < LanderConfig::rgaCooldownBeforeTurboStopMs) {
+        return;
+      }
+
+      shutdownService.phase = ShutdownService::Phase::StopTurbo;
+      return;
+    }
+
+    case ShutdownService::Phase::StopTurbo:
       sendStatusMessage(7);
       digitalWrite(LED_PIN, HIGH);
       sendStatusMessage(8);

@@ -53,6 +53,8 @@ Important values:
 - Default turbopump target speed: `1200 Hz`
 - Turbopump max speed used for command scaling: `1500 Hz`
 - Turbopump ready condition: target minus `50 Hz`, error code `0`, drive power below `15 W`
+- RGA start delay after turbopump ready: `600000 ms` / 10 minutes
+- RGA cooldown before turbopump stop: `600000 ms` / 10 minutes
 - SD chip select: `BUILTIN_SDCARD`
 - Data file rotation: every 4th hour at minute 10
 - Ethernet local IP/port: `111.111.111.111:8000`
@@ -114,11 +116,11 @@ Supported commands:
 | `?` | Query current state code. |
 | `T<unix>` | Set Teensy RTC/system time to a Unix timestamp. Timestamp must be greater than `1735689600`. |
 | `!Z10` | Start turbopump only. |
-| `!Z11` | Start turbopump, then start RGA when the turbopump is ready. |
+| `!Z11` | Start turbopump, then start RGA after the configured post-ready delay. |
 | `!Z12` | Start RGA only if the turbopump is already ready. |
 | `!Z21` | Stop system. |
 | `!Z22` | Stop system. |
-| `!ZFS` | Stop RGA filament only. |
+| `!ZFS` | Stop RGA filament only and leave turbopump running. |
 | `!RS####` | Set turbopump target speed in Hz. The speed field must be exactly four digits, for example `!RS1200`. |
 
 Malformed commands are rejected and reported on the debug serial port.
@@ -201,9 +203,9 @@ The logger creates a new file at boot and rotates files at the configured rotati
 3. When Ethernet is enabled, the firmware sends `$` to request time. Reply with a valid `T<unix>` command if the RTC is not already correct.
 4. Send `!Z11` to start a full measurement sequence.
 5. The firmware sets the turbopump target speed, starts the pump, and polls status at the configured interval until the pump is ready.
-6. Once the turbopump is ready, the firmware starts the RGA filament and enters `Measuring`.
+6. Once the turbopump is ready, the firmware waits for `rgaStartDelayAfterTurboReadyMs`, then starts the RGA filament and enters `Measuring`.
 7. During measurement, the RGA scan cycle runs nonblocking. Completed mass readings and the final total-pressure reading are written to SD and sent to the surface. The mass filter is not parked between continuous scan cycles unless `rgaParkAfterCycle` is enabled.
-8. Send `!Z21` or `!Z22` to stop. The firmware turns off the RGA filament, stops the turbopump, polls until the pump speed reaches zero or shutdown timeout expires, then returns to `Idle`.
+8. Send `!Z21` or `!Z22` to stop. The firmware turns off the RGA filament, waits for `rgaCooldownBeforeTurboStopMs`, stops the turbopump, polls until the pump speed reaches zero or shutdown timeout expires, then returns to `Idle`.
 
 ## Safety and Fault Handling
 
