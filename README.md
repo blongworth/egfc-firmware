@@ -51,6 +51,7 @@ Important values:
 - RGA model mass limit fallback: `100 amu`; startup verifies this with `ID?`
 - Turbopump USB serial baud: `9600`
 - Default turbopump target speed: `1200 Hz`
+- Set turbopump speed during startup: disabled by default; use `!RS####` to set speed explicitly
 - Turbopump max speed used for command scaling: `1500 Hz`
 - Turbopump ready condition: target minus `50 Hz`, error code `0`, drive power below `15 W`
 - RGA start delay after turbopump ready: `600000 ms` / 10 minutes

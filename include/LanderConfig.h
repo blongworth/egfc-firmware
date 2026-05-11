@@ -21,6 +21,7 @@ constexpr bool rgaParkAfterCycle = false;
 constexpr bool rgaParkOnStop = true;
 
 constexpr uint16_t defaultTurboSpeedHz = 1200;
+constexpr bool setTurboSpeedOnStartup = false;
 constexpr uint16_t turboMaxSpeedHz = 1500;
 constexpr uint16_t turboReadySpeedMarginHz = 50;
 constexpr uint16_t turboReadyMaxDrivePowerW = 15;

@@ -435,11 +435,15 @@ void serviceTurboStartup()
       digitalWrite(LED_PIN, HIGH);
       sendStatusMessage(2);
       Serial.println("Turbo Starting ...");
-      if (!turboPump.setTargetSpeedHz(turboStartup.targetSpeedHz, &Serial)) {
-        Serial.println("Turbo speed command timed out");
-        sendStatusMessage(5);
-        beginShutdown();
-        return;
+      if (LanderConfig::setTurboSpeedOnStartup) {
+        if (!turboPump.setTargetSpeedHz(turboStartup.targetSpeedHz, &Serial)) {
+          Serial.println("Turbo speed command timed out");
+          sendStatusMessage(5);
+          beginShutdown();
+          return;
+        }
+      } else {
+        Serial.println("Skipping turbo speed command on startup");
       }
       turboStartup.phase = TurboStartupService::Phase::StartPump;
       return;
