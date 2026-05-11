@@ -114,6 +114,7 @@ Supported commands:
 | Command | Action |
 | --- | --- |
 | `?` | Query current state code. |
+| `?A` | Query all status as a machine-readable key/value line. |
 | `T<unix>` | Set Teensy RTC/system time to a Unix timestamp. Timestamp must be greater than `1735689600`. |
 | `!Z10` | Start turbopump only. |
 | `!Z11` | Start turbopump, then start RGA after the configured post-ready delay. |
@@ -139,6 +140,8 @@ State query responses use `?N`, where `N` is:
 | `5` | Error |
 
 The firmware also sends on/off notifications as `?0` or `?1` when state changes or time is synchronized. `?1` means the lander is starting, turbo running, checking RGA readiness, or measuring.
+
+The `?A` command responds with one key/value line prefixed by `A:`. It includes system time, state, startup/shutdown phase, delay remaining times, turbopump status/readiness, RGA filament/error status, and RGA acquisition flags.
 
 Status payloads use:
 

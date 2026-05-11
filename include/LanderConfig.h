@@ -42,6 +42,7 @@ constexpr int sdChipSelect = BUILTIN_SDCARD;
 
 constexpr size_t surfaceMessageSize = 100;
 constexpr size_t statusPayloadSize = 128;
+constexpr size_t allStatusPayloadSize = 768;
 constexpr size_t csvRowSize = 100;
 constexpr unsigned long timeSyncWaitMs = 5000UL;
 constexpr uint32_t minValidUnixTime = 1735689600UL;

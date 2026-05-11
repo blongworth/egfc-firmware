@@ -84,6 +84,11 @@ SurfaceCommand parseSurfaceCommand(const char *message)
     return command;
   }
 
+  if (matchesCommand(message, length, "?A")) {
+    command.type = SurfaceCommandType::QueryAllStatus;
+    return command;
+  }
+
   if (message[0] == 'T') {
     command.type = parseUint32(message + 1, length - 1, command.unixTime) &&
                    isValidUnixTime(command.unixTime)

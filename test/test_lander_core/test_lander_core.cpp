@@ -6,6 +6,10 @@ void test_parse_query_status()
   const SurfaceCommand command = parseSurfaceCommand("?");
   TEST_ASSERT_EQUAL(static_cast<int>(SurfaceCommandType::QueryStatus),
                     static_cast<int>(command.type));
+
+  const SurfaceCommand allStatusCommand = parseSurfaceCommand("?A");
+  TEST_ASSERT_EQUAL(static_cast<int>(SurfaceCommandType::QueryAllStatus),
+                    static_cast<int>(allStatusCommand.type));
 }
 
 void test_parse_start_and_stop_commands()

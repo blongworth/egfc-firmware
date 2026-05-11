@@ -23,6 +23,7 @@ enum class SurfaceCommandType : uint8_t {
   SetTurboSpeed,
   TimeSync,
   QueryStatus,
+  QueryAllStatus,
   Invalid
 };
 

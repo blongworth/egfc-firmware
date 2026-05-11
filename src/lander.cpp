@@ -144,6 +144,7 @@ bool startRGA();
 void setLanderState(LanderState state);
 void sendStatusMessage(int messageCode);
 void sendDetailedStatus();
+void sendAllStatus();
 bool buildTurboStatusPayload(char *payload, size_t payloadSize);
 void sendOnOffState();
 void serviceDataFileRotation();
@@ -310,6 +311,10 @@ void handleSurfaceCommand(const SurfaceCommand &command)
 
     case SurfaceCommandType::QueryStatus:
       surfaceLink.sendStateCode(stateStatusCode(landerState));
+      break;
+
+    case SurfaceCommandType::QueryAllStatus:
+      sendAllStatus();
       break;
 
     case SurfaceCommandType::Invalid:
@@ -645,6 +650,115 @@ void sendDetailedStatus()
   getTimeISO8601(timestamp, sizeof(timestamp));
   buildTurboStatusPayload(payload, sizeof(payload));
   surfaceLink.sendStatusPayload(timestamp, payload);
+}
+
+const char *turboStartupPhaseName(TurboStartupService::Phase phase)
+{
+  switch (phase) {
+    case TurboStartupService::Phase::Idle:
+      return "Idle";
+    case TurboStartupService::Phase::SetSpeed:
+      return "SetSpeed";
+    case TurboStartupService::Phase::StartPump:
+      return "StartPump";
+    case TurboStartupService::Phase::WaitReady:
+      return "WaitReady";
+    case TurboStartupService::Phase::WaitRgaStartDelay:
+      return "WaitRgaStartDelay";
+  }
+
+  return "Unknown";
+}
+
+const char *shutdownPhaseName(ShutdownService::Phase phase)
+{
+  switch (phase) {
+    case ShutdownService::Phase::Idle:
+      return "Idle";
+    case ShutdownService::Phase::StopFilament:
+      return "StopFilament";
+    case ShutdownService::Phase::WaitRgaCooldown:
+      return "WaitRgaCooldown";
+    case ShutdownService::Phase::StopTurbo:
+      return "StopTurbo";
+    case ShutdownService::Phase::WaitTurboStop:
+      return "WaitTurboStop";
+  }
+
+  return "Unknown";
+}
+
+unsigned long remainingMs(unsigned long startedAtMs, unsigned long durationMs)
+{
+  const unsigned long elapsedMs = millis() - startedAtMs;
+  return elapsedMs >= durationMs ? 0UL : durationMs - elapsedMs;
+}
+
+void sendAllStatus()
+{
+  char isoTime[25];
+  char message[LanderConfig::allStatusPayloadSize];
+  getTimeISO8601(isoTime, sizeof(isoTime));
+
+  const bool turboStatusValid = turboPump.readFullStatus(latestTurboStatus);
+  int readySpeedHz = static_cast<int>(targetTurboSpeedHz) - static_cast<int>(LanderConfig::turboReadySpeedMarginHz);
+  if (readySpeedHz < 0) {
+    readySpeedHz = 0;
+  }
+  const bool turboReady = turboStatusValid &&
+                          latestTurboStatus.errorCode == 0 &&
+                          latestTurboStatus.actualSpeedHz > readySpeedHz &&
+                          latestTurboStatus.drivePowerW < LanderConfig::turboReadyMaxDrivePowerW;
+
+  float filamentStatus = -1.0f;
+  const bool filamentStatusValid = rga.readFilamentStatusBlocking(filamentStatus);
+  const bool rgaStatusValid = rga.readErrorStatusBlocking(latestRGAStatus);
+
+  const unsigned long rgaStartDelayRemainingMs =
+    turboStartup.phase == TurboStartupService::Phase::WaitRgaStartDelay
+      ? remainingMs(turboStartup.startedAtMs, LanderConfig::rgaStartDelayAfterTurboReadyMs)
+      : 0UL;
+  const unsigned long rgaCooldownRemainingMs =
+    shutdownService.phase == ShutdownService::Phase::WaitRgaCooldown
+      ? remainingMs(shutdownService.startedAtMs, LanderConfig::rgaCooldownBeforeTurboStopMs)
+      : 0UL;
+
+  snprintf(message, sizeof(message),
+           "A:unix=%lu,iso=%s,timeSet=%d,state=%d,stateName=%s,on=%d,turboPhase=%s,shutdownPhase=%s,targetTurboHz=%u,rgaStartDelayRemainingMs=%lu,rgaCooldownRemainingMs=%lu,turboValid=%d,turboReady=%d,turboError=%d,turboSpeedHz=%d,turboPowerW=%d,turboVoltageV=%d,turboElectronicsC=%d,turboBottomC=%d,turboMotorC=%d,rgaFilamentValid=%d,rgaFilament=%.2f,rgaStatusValid=%d,rgaStatusByte=%d,rgaRs232Error=%d,rgaFilamentError=%d,rgaCdemError=%d,rgaQmfError=%d,rgaDetectorError=%d,rgaPowerSupplyError=%d,rgaAcquiring=%d,rgaCycleReady=%d",
+           static_cast<unsigned long>(now()),
+           isoTime,
+           timeStatus() == timeSet ? 1 : 0,
+           stateStatusCode(landerState),
+           stateName(landerState),
+           stateOnOff(landerState) ? 1 : 0,
+           turboStartupPhaseName(turboStartup.phase),
+           shutdownPhaseName(shutdownService.phase),
+           targetTurboSpeedHz,
+           rgaStartDelayRemainingMs,
+           rgaCooldownRemainingMs,
+           turboStatusValid ? 1 : 0,
+           turboReady ? 1 : 0,
+           turboStatusValid ? latestTurboStatus.errorCode : -1,
+           turboStatusValid ? latestTurboStatus.actualSpeedHz : -1,
+           turboStatusValid ? latestTurboStatus.drivePowerW : -1,
+           turboStatusValid ? latestTurboStatus.driveVoltageV : -1,
+           turboStatusValid ? latestTurboStatus.electronicsTempC : -1,
+           turboStatusValid ? latestTurboStatus.pumpBottomTempC : -1,
+           turboStatusValid ? latestTurboStatus.motorTempC : -1,
+           filamentStatusValid ? 1 : 0,
+           filamentStatusValid ? filamentStatus : -1.0f,
+           rgaStatusValid ? 1 : 0,
+           rgaStatusValid ? latestRGAStatus.statusByte : -1,
+           rgaStatusValid ? latestRGAStatus.rs232Error : -1,
+           rgaStatusValid ? latestRGAStatus.filamentError : -1,
+           rgaStatusValid ? latestRGAStatus.cdemError : -1,
+           rgaStatusValid ? latestRGAStatus.qmfError : -1,
+           rgaStatusValid ? latestRGAStatus.detectorError : -1,
+           rgaStatusValid ? latestRGAStatus.powerSupplyError : -1,
+           rga.isAcquiring() ? 1 : 0,
+           rga.cycleReady() ? 1 : 0);
+
+  surfaceLink.sendText(message);
 }
 
 bool buildTurboStatusPayload(char *payload, size_t payloadSize)
