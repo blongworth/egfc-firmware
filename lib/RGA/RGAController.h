@@ -13,6 +13,7 @@ struct RGAConfig {
   float filamentEmissionMa = 1.0f;
   uint16_t scanResponseTimeoutMs = 3000;
   uint16_t statusResponseTimeoutMs = 1000;
+  uint16_t hardwareCommandResponseTimeoutMs = 10000;
   uint16_t commandSettleMs = 25;
   uint8_t maxFilamentOffAttempts = 5;
   bool flushBeforeScan = true;
@@ -131,9 +132,11 @@ private:
   void finishTotalPressure(int32_t current, bool valid, bool timedOut);
   void finishCycle();
   bool sendStatusCommand(const char *command, uint8_t &statusByte);
+  bool sendStatusCommand(const char *command, uint8_t &statusByte, uint16_t timeoutMs);
   bool retryStatusCommand(const char *command, uint8_t &statusByte);
+  bool retryStatusCommand(const char *command, uint8_t &statusByte, uint16_t timeoutMs);
   bool sendNoResponseCommand(const char *command);
-  bool readStatusByte(uint8_t &statusByte);
+  bool readStatusByte(uint8_t &statusByte, uint16_t timeoutMs);
   bool readAsciiLine(char *buffer, size_t bufferSize, uint16_t timeoutMs);
   bool readAsciiFloatBlocking(const char *command, float &value);
   bool readAsciiIntBlocking(const char *command, int &value);

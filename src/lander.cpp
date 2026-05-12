@@ -17,6 +17,7 @@ RGAConfig rgaConfig = {
   LanderConfig::rgaFilamentEmissionMa,
   LanderConfig::rgaScanResponseTimeoutMs,
   LanderConfig::rgaStatusResponseTimeoutMs,
+  LanderConfig::rgaHardwareCommandResponseTimeoutMs,
   LanderConfig::rgaCommandSettleMs,
   LanderConfig::rgaMaxFilamentOffAttempts,
   true,
@@ -298,7 +299,7 @@ void handleSurfaceCommand(const SurfaceCommand &command)
       sendStatusMessage(10);
       sendStatusMessage(11);
       Serial.println(targetTurboSpeedHz);
-      if (!turboPump.setTargetSpeedHz(targetTurboSpeedHz, &Serial)) {
+      if (!turboPump.setTargetSpeedHz(targetTurboSpeedHz, nullptr)) {
         Serial.println("Turbo speed change timed out");
       }
       sendStatusMessage(12);

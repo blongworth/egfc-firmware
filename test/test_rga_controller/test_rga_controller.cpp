@@ -15,6 +15,7 @@ RGAConfig makeConfig(const uint8_t *masses, uint8_t massCount, bool measureTotal
   config.filamentEmissionMa = 1.0f;
   config.scanResponseTimeoutMs = 5;
   config.statusResponseTimeoutMs = 5;
+  config.hardwareCommandResponseTimeoutMs = 20;
   config.commandSettleMs = 0;
   config.maxFilamentOffAttempts = 1;
   config.flushBeforeScan = true;
@@ -263,6 +264,46 @@ void test_rga_filament_start_and_stop_send_manual_commands()
   TEST_ASSERT_EQUAL_STRING("FL?\r", serial.writeAt(3).c_str());
 }
 
+void test_rga_filament_start_waits_longer_for_hardware_status_commands()
+{
+  const uint8_t masses[] = {2};
+  FakeStream serial;
+  serial.scriptResponseAfter("FL1.25\r", std::vector<uint8_t>{0}, 10);
+  serial.scriptStatusOk("NF3\r");
+  serial.scriptStatusOk("TP1\r");
+  serial.scriptResponseAfter("CA\r", std::vector<uint8_t>{0}, 10);
+
+  RGAConfig config = makeConfig(masses, 1);
+  config.filamentEmissionMa = 1.25f;
+  config.noiseFloor = 3;
+
+  RGAController rga(serial);
+  rga.configure(config);
+
+  TEST_ASSERT_TRUE(rga.startFilamentBlocking());
+  TEST_ASSERT_EQUAL_STRING("MR0\r", serial.writeAt(0).c_str());
+  TEST_ASSERT_EQUAL_STRING("FL1.25\r", serial.writeAt(1).c_str());
+  TEST_ASSERT_EQUAL_STRING("CA\r", serial.writeAt(4).c_str());
+}
+
+void test_rga_filament_start_still_times_out_after_hardware_timeout()
+{
+  const uint8_t masses[] = {2};
+  FakeStream serial;
+
+  RGAConfig config = makeConfig(masses, 1);
+  config.filamentEmissionMa = 1.25f;
+  config.hardwareCommandResponseTimeoutMs = 20;
+
+  RGAController rga(serial);
+  rga.configure(config);
+
+  TEST_ASSERT_FALSE(rga.startFilamentBlocking());
+  TEST_ASSERT_EQUAL_STRING("MR0\r", serial.writeAt(0).c_str());
+  TEST_ASSERT_EQUAL_STRING("FL1.25\r", serial.writeAt(1).c_str());
+  TEST_ASSERT_EQUAL_STRING("FL1.25\r", serial.writeAt(2).c_str());
+}
+
 void test_rga_stop_can_skip_parking_when_configured()
 {
   const uint8_t masses[] = {2};
@@ -312,6 +353,8 @@ int main()
   RUN_TEST(test_rga_total_pressure_timeout_sets_cycle_timeout);
   RUN_TEST(test_rga_config_validation_rejects_bad_values);
   RUN_TEST(test_rga_filament_start_and_stop_send_manual_commands);
+  RUN_TEST(test_rga_filament_start_waits_longer_for_hardware_status_commands);
+  RUN_TEST(test_rga_filament_start_still_times_out_after_hardware_timeout);
   RUN_TEST(test_rga_stop_can_skip_parking_when_configured);
   RUN_TEST(test_rga_read_total_pressure_blocking_enables_flag_and_decodes_current);
   return UNITY_END();

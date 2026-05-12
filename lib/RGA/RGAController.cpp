@@ -141,7 +141,7 @@ bool RGAController::initializeBlocking(uint8_t &statusByte, Print *log)
   }
 
   uint8_t filamentStatus = 0;
-  if (!sendStatusCommand("FL0.00\r", filamentStatus)) {
+  if (!sendStatusCommand("FL0.00\r", filamentStatus, config_.hardwareCommandResponseTimeoutMs)) {
     if (log) {
       log->println("RGA FL0.00 returned error status or timed out");
     }
@@ -173,7 +173,7 @@ bool RGAController::startFilamentBlocking(Print *log)
   char filamentCommand[16];
   snprintf(filamentCommand, sizeof(filamentCommand), "FL%.2f\r", config_.filamentEmissionMa);
   uint8_t statusByte = 0;
-  if (!retryStatusCommand(filamentCommand, statusByte)) {
+  if (!retryStatusCommand(filamentCommand, statusByte, config_.hardwareCommandResponseTimeoutMs)) {
     if (log) {
       log->print("RGA FL status error: ");
       log->println(statusByte, BIN);
@@ -204,7 +204,7 @@ bool RGAController::startFilamentBlocking(Print *log)
   if (log) {
     log->println("Zeroing RGA detector and updating scan parameters");
   }
-  if (!retryStatusCommand("CA\r", statusByte)) {
+  if (!retryStatusCommand("CA\r", statusByte, config_.hardwareCommandResponseTimeoutMs)) {
     if (log) {
       log->print("RGA CA status error: ");
       log->println(statusByte, BIN);
@@ -233,7 +233,7 @@ bool RGAController::stopFilamentBlocking(Print *log)
     }
 
     uint8_t statusByte = 0;
-    sendStatusCommand("FL0.00\r", statusByte);
+    sendStatusCommand("FL0.00\r", statusByte, config_.hardwareCommandResponseTimeoutMs);
 
     float status = -1.0f;
     if (readFilamentStatusBlocking(status) && status <= 0.01f) {
@@ -594,10 +594,15 @@ void RGAController::finishCycle()
 
 bool RGAController::sendStatusCommand(const char *command, uint8_t &statusByte)
 {
+  return sendStatusCommand(command, statusByte, config_.statusResponseTimeoutMs);
+}
+
+bool RGAController::sendStatusCommand(const char *command, uint8_t &statusByte, uint16_t timeoutMs)
+{
   flushInput();
   serial_.write(command);
 
-  if (!readStatusByte(statusByte)) {
+  if (!readStatusByte(statusByte, timeoutMs)) {
     return false;
   }
 
@@ -612,12 +617,17 @@ bool RGAController::sendStatusCommand(const char *command, uint8_t &statusByte)
 
 bool RGAController::retryStatusCommand(const char *command, uint8_t &statusByte)
 {
-  if (sendStatusCommand(command, statusByte)) {
+  return retryStatusCommand(command, statusByte, config_.statusResponseTimeoutMs);
+}
+
+bool RGAController::retryStatusCommand(const char *command, uint8_t &statusByte, uint16_t timeoutMs)
+{
+  if (sendStatusCommand(command, statusByte, timeoutMs)) {
     return true;
   }
 
   delay(config_.commandSettleMs);
-  return sendStatusCommand(command, statusByte);
+  return sendStatusCommand(command, statusByte, timeoutMs);
 }
 
 bool RGAController::sendNoResponseCommand(const char *command)
@@ -628,9 +638,9 @@ bool RGAController::sendNoResponseCommand(const char *command)
   return true;
 }
 
-bool RGAController::readStatusByte(uint8_t &statusByte)
+bool RGAController::readStatusByte(uint8_t &statusByte, uint16_t timeoutMs)
 {
-  return readBytesWithTimeout(&statusByte, 1, config_.statusResponseTimeoutMs);
+  return readBytesWithTimeout(&statusByte, 1, timeoutMs);
 }
 
 bool RGAController::readAsciiLine(char *buffer, size_t bufferSize, uint16_t timeoutMs)

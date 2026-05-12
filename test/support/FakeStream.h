@@ -13,11 +13,13 @@ public:
 
   int available() override
   {
+    releaseScheduledInput();
     return static_cast<int>(input_.size());
   }
 
   int read() override
   {
+    releaseScheduledInput();
     if (input_.empty()) {
       return -1;
     }
@@ -29,6 +31,7 @@ public:
 
   int peek() override
   {
+    releaseScheduledInput();
     if (input_.empty()) {
       return -1;
     }
@@ -49,7 +52,12 @@ public:
 
   void scriptResponse(const char *command, const std::vector<uint8_t> &response)
   {
-    scripts_.push_back({std::string(command), response, false});
+    scriptResponseAfter(command, response, 0);
+  }
+
+  void scriptResponseAfter(const char *command, const std::vector<uint8_t> &response, unsigned long delayMs)
+  {
+    scripts_.push_back({std::string(command), response, delayMs, false});
   }
 
   void scriptTextResponse(const char *command, const char *response)
@@ -94,7 +102,13 @@ private:
   struct Script {
     std::string command;
     std::vector<uint8_t> response;
+    unsigned long delayMs;
     bool used;
+  };
+
+  struct ScheduledInput {
+    unsigned long readyAtMs;
+    std::vector<uint8_t> response;
   };
 
   void appendScriptedResponse(const std::string &command)
@@ -102,13 +116,30 @@ private:
     for (Script &script : scripts_) {
       if (!script.used && script.command == command) {
         script.used = true;
-        appendInput(script.response);
+        if (script.delayMs == 0) {
+          appendInput(script.response);
+        } else {
+          scheduled_.push_back({millis() + script.delayMs, script.response});
+        }
         return;
       }
     }
   }
 
+  void releaseScheduledInput()
+  {
+    for (auto it = scheduled_.begin(); it != scheduled_.end();) {
+      if (millis() - it->readyAtMs < 0x80000000UL) {
+        appendInput(it->response);
+        it = scheduled_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
   std::deque<int> input_;
+  std::vector<ScheduledInput> scheduled_;
   std::string pendingWrite_;
   std::vector<std::string> writes_;
   std::vector<Script> scripts_;
