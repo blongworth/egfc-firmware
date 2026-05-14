@@ -231,10 +231,10 @@ void test_rga_filament_start_and_stop_send_manual_commands()
 {
   const uint8_t masses[] = {2};
   FakeStream serial;
-  serial.scriptStatusOk("FL1.25\r");
+  serial.scriptTextResponse("FL1.25\r", "0\n\r");
   serial.scriptTextResponse("NF3\r", "3\n\r");
   serial.scriptResponse("TP1\r", littleEndianInt32(0));
-  serial.scriptStatusOk("CA\r");
+  serial.scriptTextResponse("CA\r", "0\n\r");
 
   RGAConfig config = makeConfig(masses, 1);
   config.filamentEmissionMa = 1.25f;
@@ -308,7 +308,7 @@ void test_rga_status_error_queries_and_parses_error_bytes()
 {
   const uint8_t masses[] = {2};
   FakeStream serial;
-  serial.scriptResponse("FL1.25\r", std::vector<uint8_t>{2});
+  serial.scriptTextResponse("FL1.25\r", "2\n\r");
   serial.scriptTextResponse("ER?\r", "2\n\r");
   serial.scriptTextResponse("EF?\r", "64\n\r");
 

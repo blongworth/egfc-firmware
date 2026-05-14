@@ -680,7 +680,46 @@ bool RGAController::sendNoResponseCommand(const char *command)
 
 bool RGAController::readStatusByte(uint8_t &statusByte, uint16_t timeoutMs)
 {
-  return readBytesWithTimeout(&statusByte, 1, timeoutMs);
+  statusByte = 0;
+
+  uint8_t first = 0;
+  if (!readBytesWithTimeout(&first, 1, timeoutMs)) {
+    return false;
+  }
+
+  // Some RGA heads return STATUS as an ASCII decimal line (for example
+  // "0<LF><CR>") even for commands documented as echoing a STATUS byte.
+  // Treat leading ASCII digits as a decimal status value; otherwise preserve
+  // compatibility with raw one-byte STATUS responses used by tests/older code.
+  if (first >= '0' && first <= '9') {
+    char buffer[8] = {0};
+    size_t index = 0;
+    buffer[index++] = static_cast<char>(first);
+
+    const unsigned long startMs = millis();
+    while (millis() - startMs < timeoutMs && index < sizeof(buffer) - 1) {
+      if (serial_.available() > 0) {
+        const char c = static_cast<char>(serial_.read());
+        if (c == '\r' || c == '\n') {
+          consumeLineTerminators();
+          break;
+        }
+        if (c < '0' || c > '9') {
+          return false;
+        }
+        buffer[index++] = c;
+      } else {
+        yield();
+      }
+    }
+
+    buffer[index] = '\0';
+    statusByte = static_cast<uint8_t>(atoi(buffer) & 0xFF);
+    return true;
+  }
+
+  statusByte = first;
+  return true;
 }
 
 bool RGAController::readAsciiLine(char *buffer, size_t bufferSize, uint16_t timeoutMs)
