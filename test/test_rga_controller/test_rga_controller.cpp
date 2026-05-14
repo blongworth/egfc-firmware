@@ -232,8 +232,8 @@ void test_rga_filament_start_and_stop_send_manual_commands()
   const uint8_t masses[] = {2};
   FakeStream serial;
   serial.scriptStatusOk("FL1.25\r");
-  serial.scriptStatusOk("NF3\r");
-  serial.scriptStatusOk("TP1\r");
+  serial.scriptTextResponse("NF3\r", "3\n\r");
+  serial.scriptResponse("TP1\r", littleEndianInt32(0));
   serial.scriptStatusOk("CA\r");
 
   RGAConfig config = makeConfig(masses, 1);
@@ -252,7 +252,7 @@ void test_rga_filament_start_and_stop_send_manual_commands()
   TEST_ASSERT_EQUAL_STRING("CA\r", serial.writeAt(4).c_str());
 
   serial.clearWrites();
-  serial.scriptStatusOk("TP0\r");
+  serial.scriptResponse("TP0\r", littleEndianInt32(0));
   serial.scriptStatusOk("FL0.00\r");
   serial.scriptTextResponse("FL?\r", "0.00\r");
 
@@ -269,8 +269,8 @@ void test_rga_filament_start_waits_longer_for_hardware_status_commands()
   const uint8_t masses[] = {2};
   FakeStream serial;
   serial.scriptResponseAfter("FL1.25\r", std::vector<uint8_t>{0}, 10);
-  serial.scriptStatusOk("NF3\r");
-  serial.scriptStatusOk("TP1\r");
+  serial.scriptTextResponse("NF3\r", "3\n\r");
+  serial.scriptResponse("TP1\r", littleEndianInt32(0));
   serial.scriptResponseAfter("CA\r", std::vector<uint8_t>{0}, 10);
 
   RGAConfig config = makeConfig(masses, 1);
@@ -304,11 +304,33 @@ void test_rga_filament_start_still_times_out_after_hardware_timeout()
   TEST_ASSERT_EQUAL_STRING("FL1.25\r", serial.writeAt(2).c_str());
 }
 
+void test_rga_status_error_queries_and_parses_error_bytes()
+{
+  const uint8_t masses[] = {2};
+  FakeStream serial;
+  serial.scriptResponse("FL1.25\r", std::vector<uint8_t>{2});
+  serial.scriptTextResponse("ER?\r", "2\n\r");
+  serial.scriptTextResponse("EF?\r", "64\n\r");
+
+  RGAConfig config = makeConfig(masses, 1);
+  config.filamentEmissionMa = 1.25f;
+
+  RGAController rga(serial);
+  rga.configure(config);
+
+  TEST_ASSERT_FALSE(rga.startFilamentBlocking());
+  const RGAErrorStatus &status = rga.lastErrorStatus();
+  TEST_ASSERT_TRUE(status.valid);
+  TEST_ASSERT_EQUAL_UINT8(2, status.statusByte);
+  TEST_ASSERT_EQUAL_INT(64, status.filamentError);
+  TEST_ASSERT_EQUAL_INT(0, status.rs232Error);
+}
+
 void test_rga_stop_can_skip_parking_when_configured()
 {
   const uint8_t masses[] = {2};
   FakeStream serial;
-  serial.scriptStatusOk("TP0\r");
+  serial.scriptResponse("TP0\r", littleEndianInt32(0));
   serial.scriptStatusOk("FL0.00\r");
   serial.scriptTextResponse("FL?\r", "0.00\r");
 
@@ -329,7 +351,7 @@ void test_rga_read_total_pressure_blocking_enables_flag_and_decodes_current()
 {
   const uint8_t masses[] = {2};
   FakeStream serial;
-  serial.scriptStatusOk("TP1\r");
+  serial.scriptResponse("TP1\r", littleEndianInt32(0));
   serial.scriptResponse("TP?\r", littleEndianInt32(-123456));
 
   RGAController rga(serial);
@@ -355,6 +377,7 @@ int main()
   RUN_TEST(test_rga_filament_start_and_stop_send_manual_commands);
   RUN_TEST(test_rga_filament_start_waits_longer_for_hardware_status_commands);
   RUN_TEST(test_rga_filament_start_still_times_out_after_hardware_timeout);
+  RUN_TEST(test_rga_status_error_queries_and_parses_error_bytes);
   RUN_TEST(test_rga_stop_can_skip_parking_when_configured);
   RUN_TEST(test_rga_read_total_pressure_blocking_enables_flag_and_decodes_current);
   return UNITY_END();

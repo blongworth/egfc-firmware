@@ -101,6 +101,7 @@ public:
   bool readFilamentStatusBlocking(float &status);
   bool readTotalPressureBlocking(int32_t &current);
   bool setNoiseFloorBlocking(uint8_t noiseFloor);
+  bool setTotalPressureEnabledBlocking(bool enabled);
   bool parkMassFilterBlocking();
   bool queryIdentityBlocking(RGAIdentity &identity);
   bool readErrorStatusBlocking(RGAErrorStatus &status);

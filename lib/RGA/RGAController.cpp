@@ -177,6 +177,22 @@ bool RGAController::startFilamentBlocking(Print *log)
     if (log) {
       log->print("RGA FL status error: ");
       log->println(statusByte, BIN);
+      if (lastErrorStatus_.valid) {
+        log->print("RGA error bytes ER/EC/EF/EM/EQ/ED/EP: ");
+        log->print(lastErrorStatus_.statusByte);
+        log->print('/');
+        log->print(lastErrorStatus_.rs232Error);
+        log->print('/');
+        log->print(lastErrorStatus_.filamentError);
+        log->print('/');
+        log->print(lastErrorStatus_.cdemError);
+        log->print('/');
+        log->print(lastErrorStatus_.qmfError);
+        log->print('/');
+        log->print(lastErrorStatus_.detectorError);
+        log->print('/');
+        log->println(lastErrorStatus_.powerSupplyError);
+      }
     }
     return false;
   }
@@ -185,6 +201,9 @@ bool RGAController::startFilamentBlocking(Print *log)
     log->println("Setting RGA noise floor");
   }
   if (!setNoiseFloorBlocking(config_.noiseFloor)) {
+    if (log) {
+      log->println("RGA NF command did not echo the requested noise floor");
+    }
     return false;
   }
 
@@ -192,10 +211,9 @@ bool RGAController::startFilamentBlocking(Print *log)
     if (log) {
       log->println("Enabling RGA total pressure measurement");
     }
-    if (!retryStatusCommand("TP1\r", statusByte)) {
+    if (!setTotalPressureEnabledBlocking(true)) {
       if (log) {
-        log->print("RGA TP1 status error: ");
-        log->println(statusByte, BIN);
+        log->println("RGA TP1 did not return a total-pressure current response");
       }
       return false;
     }
@@ -208,6 +226,22 @@ bool RGAController::startFilamentBlocking(Print *log)
     if (log) {
       log->print("RGA CA status error: ");
       log->println(statusByte, BIN);
+      if (lastErrorStatus_.valid) {
+        log->print("RGA error bytes ER/EC/EF/EM/EQ/ED/EP: ");
+        log->print(lastErrorStatus_.statusByte);
+        log->print('/');
+        log->print(lastErrorStatus_.rs232Error);
+        log->print('/');
+        log->print(lastErrorStatus_.filamentError);
+        log->print('/');
+        log->print(lastErrorStatus_.cdemError);
+        log->print('/');
+        log->print(lastErrorStatus_.qmfError);
+        log->print('/');
+        log->print(lastErrorStatus_.detectorError);
+        log->print('/');
+        log->println(lastErrorStatus_.powerSupplyError);
+      }
     }
     return false;
   }
@@ -223,8 +257,7 @@ bool RGAController::stopFilamentBlocking(Print *log)
   }
 
   if (config_.measureTotalPressure) {
-    uint8_t totalPressureStatus = 0;
-    sendStatusCommand("TP0\r", totalPressureStatus);
+    setTotalPressureEnabledBlocking(false);
   }
 
   for (uint8_t attempt = 0; attempt < config_.maxFilamentOffAttempts; attempt++) {
@@ -253,8 +286,7 @@ bool RGAController::readFilamentStatusBlocking(float &status)
 
 bool RGAController::readTotalPressureBlocking(int32_t &current)
 {
-  uint8_t statusByte = 0;
-  if (!retryStatusCommand("TP1\r", statusByte)) {
+  if (!setTotalPressureEnabledBlocking(true)) {
     return false;
   }
 
@@ -279,13 +311,21 @@ bool RGAController::setNoiseFloorBlocking(uint8_t noiseFloor)
   char command[10];
   snprintf(command, sizeof(command), "NF%u\r", noiseFloor);
 
-  uint8_t statusByte = 0;
-  if (!retryStatusCommand(command, statusByte)) {
+  int echoedNoiseFloor = -1;
+  if (!readAsciiIntBlocking(command, echoedNoiseFloor) || echoedNoiseFloor != noiseFloor) {
     return false;
   }
 
   config_.noiseFloor = noiseFloor;
   return true;
+}
+
+bool RGAController::setTotalPressureEnabledBlocking(bool enabled)
+{
+  uint8_t buffer[4] = {0, 0, 0, 0};
+  flushInput();
+  serial_.write(enabled ? "TP1\r" : "TP0\r");
+  return readBytesWithTimeout(buffer, sizeof(buffer), currentScanTimeoutMs());
 }
 
 bool RGAController::parkMassFilterBlocking()
