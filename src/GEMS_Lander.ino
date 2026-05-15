@@ -1,7 +1,7 @@
 /* GEMS Lander*/
 
 // uncomment to enable ethernet communication
-#define USE_ETHERNET
+// #define USE_ETHERNET
 //
 #include <SPI.h>
 #include <SD.h>
@@ -13,13 +13,7 @@
 #endif
 
 #define RGA_SERIAL Serial4
-#define ADV_SERIAL Serial3
-#define VALVE_SERIAL Serial2
 #define LED_PIN 13
-
-// If defined, send valve change commands
-// time between inlet valve position changes
-//#define VALVE_CHANGE_TIME 1000 * 60 * 7.5 // 7.5 minutes
 
 // noise floor to use for measurements
 const byte NOISE_FLOOR = 2;
@@ -27,7 +21,7 @@ const byte NOISE_FLOOR = 2;
 // AMU's to measure
 const byte AMUS[] = {
   2,
-  15, 
+  15,
   16,
   18,
   28,
@@ -54,16 +48,6 @@ unsigned int destinationPort = 8002;
 EthernetUDP Udp;
 #endif
 
-// ADV globals
-const byte numChars = 28; //max bytes for ADV packets
-const byte startMarker = 165; //start byte of ADV packets
-const byte VVDChar = 16; //VVD packet designator
-const byte VSDChar = 17; //VSD packet designator
-const byte VVDLength = 24; //length of VVD packets
-const byte VSDLength = 28; //length of VSD packets
-byte ADVpacket[numChars];
-boolean newData = false;
-
 const int chipSelect = BUILTIN_SDCARD;
 
 char fil_chk[5] = "FL?\r";
@@ -84,16 +68,13 @@ elapsedMillis turbo_bad_timer;
 const int TURBO_BUFFER_SIZE = 30;
 char turbo_message[30];
 
-// buffer for ADV serial recv
-uint8_t ADVbuffer[16384];
-
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 
 ////////////////////// Setup //////////////////////
 
 void setup() {
-  Serial.begin(9600);         
-  
+  Serial.begin(9600);
+
   // setup teensy crash reporting
   if (CrashReport) {
     Serial.print(CrashReport);
@@ -102,25 +83,7 @@ void setup() {
 
   Serial.printf("\n\nGEMS Lander %s \n", compileTime);
 
-  ADV_SERIAL.begin(115200); // ADV
-
-  // increase size of ADV serial recv buffer
-  ADV_SERIAL.addMemoryForRead(&ADVbuffer, sizeof(ADVbuffer));
-
   RGA_SERIAL.begin(28800, SERIAL_8N1);  //RGA
-  
-  VALVE_SERIAL.begin(9600); // Valve
-
-  // connect to USB
-  // pinMode(2, OUTPUT);
-  // Not sure what this does. Maybe USB reset?
-  // pin 2 of the teensy is not connected to anything
-  // for (int i = 0; i < 5; i++) { // What is this doing?
-  //   digitalWrite(2, HIGH);
-  //   delayMicroseconds(50);
-  //   digitalWrite(2, LOW);
-  //   delayMicroseconds(50);
-  // }
 
   pinMode(LED_PIN, OUTPUT);
 
@@ -131,7 +94,7 @@ void setup() {
     Serial.println("Unable to sync with the RTC");
   } else {
     Serial.println("RTC has set the system time");
-  } 
+  }
 
   startUSB();
 
@@ -169,7 +132,7 @@ void setup() {
   else {
     Serial.println("card initialized.");
   }
-  
+
 #ifdef USE_ETHERNET
   Serial.println("Starting Ethernet...");
   Ethernet.begin(mac, myIP);
@@ -178,9 +141,6 @@ void setup() {
   Serial.println(Ethernet.localIP());
 #endif
 
-  Serial.println("Starting ADV...");
-  ADVbegin();
-
 #ifdef USE_ETHERNET
   Serial.println("Getting time from surface...");
   // send a request for the current time
@@ -188,7 +148,7 @@ void setup() {
   Udp.print("$");
   Udp.write(13);
   Udp.endPacket();
-  
+
   // wait for udp packet from surface
   // timeout after 5 seconds
   unsigned long start = millis();
@@ -252,7 +212,7 @@ void loop() {
 #else
   int packetSize = Serial.available();
 #endif
-  
+
   if (packetSize) {
     //int rlen
 #ifdef USE_ETHERNET
@@ -459,14 +419,12 @@ void loop() {
     // measure AMUS in AMU array sequentially
     for (byte i = 0; i < NUM_AMUS; i++) {
       GEMS_Measurement(TB_Spd, AMUS[i]);
-      // log valve status
-      logValve();
     }
 
     // send turbo status once per mass cycle
     StatusMsg(3);
   }
-  
+
   // Check valve timer and swap valve if needed
   // Log timestamp and position if changed
   #ifdef VALVE_CHANGE_TIME
@@ -476,7 +434,7 @@ void loop() {
   #endif
 
   USB_serial_stuff();
-  
+
   printLoopRate();
 }
 
@@ -486,7 +444,7 @@ void loop() {
 void printLoopRate() {
   static unsigned long previousMillis = 0;
   static unsigned long loopCount = 0;
-  
+
   unsigned long currentMillis = millis();
   loopCount++;
 
@@ -500,60 +458,6 @@ void printLoopRate() {
   }
 }
 
-void logValve() {
-  if (!VALVE_SERIAL.available()) return;
-
-  if (VALVE_SERIAL.peek() != 'V') {
-    // If the first byte is not 'V', read and discard the rest of the line
-    while (VALVE_SERIAL.available()) {
-      VALVE_SERIAL.read();
-    }
-    return;
-  }
-
-  char valve_status[100];
-  VALVE_SERIAL.readBytesUntil('\n', valve_status, sizeof(valve_status));
-  // Log the valve position to the serial monitor
-  Serial.print("Valve status: ");
-  Serial.println(valve_status);
-
-  char timestamp[25];
-  getTimeISO8601(timestamp, sizeof(timestamp));
-
-  // Send the valve status to the surface via UDP
-  Udp.beginPacket(destinationIP, destinationPort);
-  Udp.printf("%s,%s", valve_status, timestamp);
-  Udp.write(13);
-  Udp.endPacket();
-
-  // Log the valve position to the SD card if open
-  if (dataFile) {
-    dataFile.printf("%s,%s", valve_status, timestamp);
-    dataFile.println();
-  } else {
-    Serial.println("No SD file open for logging valve status.");
-  }
-}
-
-#ifdef VALVE_CHANGE_TIME
-// TODO: do this by clock time
-void changeValve() {
-  static bool isTop = true;  // Track current valve position
-  static elapsedMillis valve_timer;
-
-  if (valve_timer >= VALVE_CHANGE_TIME) {
-    // Toggle position and send command
-    isTop = !isTop;
-    char cmd = isTop ? 't' : 'b';
-    
-    Serial.print("Changing valve to position: ");
-    Serial.println(cmd);
-    
-    VALVE_SERIAL.write(cmd);
-    valve_timer = 0;
-  }
-}
-#endif
 
 void createNewDataFile()
 {
@@ -576,7 +480,7 @@ void GEMS_Start(int TB_Spd3) {
 
   // ADV Start
   digitalWrite(LED_PIN, HIGH);
- 
+
   StatusMsg(2);
 
   // Turbo Start
@@ -600,7 +504,7 @@ void GEMS_Start(int TB_Spd3) {
   int d = Turbo_Check(TB_Spd3);
   Serial.print("Turbo check final:");
   Serial.println(d);
-  
+
   // If turbo running, start RGA
   if (d == 1) {
     startRGA();
@@ -615,7 +519,7 @@ void turbo_start(int TB_Spd3) {
   StatusMsg(1);
 
   digitalWrite(LED_PIN, HIGH);
- 
+
   StatusMsg(2);
 
   // Turbo Start
@@ -650,15 +554,15 @@ void GEMS_Stop() {
     RGA_SERIAL.write("FL0\r");
     delay(100);
     digitalWrite(LED_PIN, HIGH);
-    delay(500);    
+    delay(500);
     digitalWrite(LED_PIN, LOW);
-    delay(500);    
+    delay(500);
     while(RGA_SERIAL.available() < 1){
       delay(1000);
       Serial.println("Waiting for FL status byte");
     }
     RGA_SERIAL.readBytes(RGA, 3);
-    FL = Read_Status_RGA(fil_chk, 1, 4); 
+    FL = Read_Status_RGA(fil_chk, 1, 4);
     Serial.print("FL?: ");
     Serial.println(FL);
   }
@@ -679,9 +583,9 @@ void GEMS_Stop() {
     Get_Status_Turbo_B(Status_Turbo);
     TurboSpeed = Status_Turbo[2];
     digitalWrite(LED_PIN, HIGH);
-    delay(1000);    
+    delay(1000);
     digitalWrite(LED_PIN, LOW);
-    delay(500);    
+    delay(500);
   }
   StatusMsg(3);
   StatusMsg(9);
@@ -756,7 +660,7 @@ void StatusMsg(int M) {
   Udp.beginPacket(destinationIP, destinationPort);
   Udp.print("!:");
   Udp.print(iso8601Time);
-  Udp.print(","); 
+  Udp.print(",");
   if (M == 3) {
     Get_Status_Turbo_A(Status_Turbo);
     Udp.print(turbo_message);
@@ -789,7 +693,7 @@ void StatusMsg(int M) {
   getTimeISO8601(iso8601Time, sizeof(iso8601Time));
   Serial.print("!:");
   Serial.print(iso8601Time);
-  Serial.print(","); 
+  Serial.print(",");
   if (M == 3) {
     Get_Status_Turbo_A(Status_Turbo);
     Serial.print(Status_Turbo[0]);
@@ -845,12 +749,10 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
   // TODO: do this as non-blocking read function in main loop
   elapsedMillis RGA_timer;
   while (RGA_SERIAL.available() < 1 && RGA_timer < 3000) {
-    recvADV();
-    parseADV();
   }
-        
+
   //read scan and write to SD + UDP
-  current = RGA_ScanI(); 
+  current = RGA_ScanI();
 
   // TODO: populate data structure, output to file, etc. outside of function
 
@@ -861,7 +763,7 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
   snprintf(csvRow, sizeof(csvRow), "R:%s,%d,%d", iso8601Time, AMU_, current);
   Serial.println(csvRow);
 
-  Serial.println("Writing to file."); 
+  Serial.println("Writing to file.");
   if (dataFile) {
     dataFile.println(csvRow);
   } else {
@@ -869,18 +771,16 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
     Serial.print(FileName);
     Serial.println(" for RGA write!");
   }
-  
+
 #ifdef USE_ETHERNET
   Serial.println("Writing to surface");
   Udp.beginPacket(destinationIP, destinationPort);
-  Udp.println(csvRow); 
+  Udp.println(csvRow);
   Udp.write(13);
   Udp.endPacket();
 #endif
 
-  // we should read TP, but doesn't work yet
-  //RGA_TP(); 
-  
+
   // Stop GEMS if N_BAD_CHECKS occur within BAD_CHECK_TIME window
   const int N_BAD_CHECKS = 2;
   const unsigned long BAD_CHECK_TIME = 20000; // 20 seconds in milliseconds
