@@ -255,6 +255,14 @@ void loop() {
       OnOff = 0;
     }
 
+    // if surface message !Z20 safely stop turbopump
+    // Stop acquisition first, verify RGA filament is off, then stop turbo.
+    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '2' && SrfMsg[3] == '0') {
+      Serial.println("Safe turbopump stop requested");
+      Status = 3;
+      OnOff = 0;
+    }
+
    // if surface message !Z10 change status to start turbo
     if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '0') {
       turbo_start(TB_Spd);
@@ -548,23 +556,11 @@ void turbo_start(int TB_Spd3) {
 
 void GEMS_Stop() {
   StatusMsg(6);
-  float FL = 1;
-  while (FL != 0) {
-    Serial.println("turning off RGA filament");
-    RGA_SERIAL.write("FL0\r");
-    delay(100);
-    digitalWrite(LED_PIN, HIGH);
-    delay(500);
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
-    while(RGA_SERIAL.available() < 1){
-      delay(1000);
-      Serial.println("Waiting for FL status byte");
-    }
-    RGA_SERIAL.readBytes(RGA, 3);
-    FL = Read_Status_RGA(fil_chk, 1, 4);
-    Serial.print("FL?: ");
-    Serial.println(FL);
+
+  if (!Ensure_RGA_Filament_Off()) {
+    Serial.println("RGA filament did not confirm off; turbo stop skipped");
+    StatusMsg(5);
+    return;
   }
 
   Serial.println("Filament off");
@@ -580,15 +576,61 @@ void GEMS_Stop() {
 
   int TurboSpeed = 999;
   while (TurboSpeed > 1) {
-    Get_Status_Turbo_B(Status_Turbo);
-    TurboSpeed = Status_Turbo[2];
+    Get_Status_Turbo_B(Status_Turbo_B);
+    TurboSpeed = Status_Turbo_B[1];
     digitalWrite(LED_PIN, HIGH);
-    delay(1000);
+    delay(1000);    
     digitalWrite(LED_PIN, LOW);
     delay(500);
   }
   StatusMsg(3);
   StatusMsg(9);
+}
+
+bool Wait_For_RGA_Status_Byte(unsigned long timeoutMs) {
+  unsigned long startMs = millis();
+  while (RGA_SERIAL.available() < 1 && millis() - startMs < timeoutMs) {
+    delay(100);
+  }
+
+  return RGA_SERIAL.available() >= 1;
+}
+
+bool Ensure_RGA_Filament_Off() {
+  const int maxFilamentOffAttempts = 10;
+
+  float FL = Read_Status_RGA(fil_chk, 1, 4);
+  Serial.print("FL?: ");
+  Serial.println(FL);
+  if (FL <= 0.01) {
+    return true;
+  }
+
+  for (int attempt = 0; attempt < maxFilamentOffAttempts; attempt++) {
+    Serial.println("turning off RGA filament");
+    RGA_SERIAL.write("FL0\r");
+    delay(100);
+
+    digitalWrite(LED_PIN, HIGH);
+    delay(500);
+    digitalWrite(LED_PIN, LOW);
+    delay(500);
+
+    if (!Wait_For_RGA_Status_Byte(5000)) {
+      Serial.println("Timed out waiting for FL status byte");
+      continue;
+    }
+
+    RGA_SERIAL.readBytes(RGA, 3);
+    FL = Read_Status_RGA(fil_chk, 1, 4);
+    Serial.print("FL?: ");
+    Serial.println(FL);
+    if (FL <= 0.01) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 void startRGA()

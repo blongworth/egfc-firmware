@@ -11,6 +11,7 @@ float Read_Status_RGA (char *x, int a, int b) { // function declaration {
   for ( int i = a; i < b; ++i ) {
     VarOut[i - a] = Var1[ i ];
   }
+  VarOut[b - a] = '\0';
   float VarNum = atof(VarOut);
   //  String s = String(Var1);
   //  int VarNum = roundf(s.toFloat());
