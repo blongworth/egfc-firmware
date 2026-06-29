@@ -5,6 +5,7 @@
 extern char turbo_message[30];
 extern int Status_Turbo_B[3];
 extern const int TURBO_BUFFER_SIZE;
+extern const int TURBO_READY_MAX_DRIVE_POWER_W;
 extern int rlen;
 
 #define USBBAUD 9600
@@ -27,6 +28,7 @@ bool driver_active[CNT_DEVICES] = {false, false, false, false};
 void  startUSB(){
   Serial.println("\n\nUSB Host Testing - Serial");
   myusb.begin();
+  userial.setTimeout(100);
   }
 
 void startTurbo()
@@ -36,7 +38,7 @@ void startTurbo()
   delay(250);
   const int BUFFER_SIZE_T = 30;
   char VarT[BUFFER_SIZE_T];
-  char VarTOut[6];
+  char VarTOut[7] = {0};
   digitalWrite(LED_PIN, HIGH);
   rlen = userial.readBytesUntil(13, VarT, BUFFER_SIZE_T);
   for (int i = 10; i < 16; ++i)
@@ -62,7 +64,7 @@ void stopTurbo(){
   // for loop from a to b
   const int BUFFER_SIZE_T = 30;
   char VarT[BUFFER_SIZE_T];
-  char VarTOut[6];
+  char VarTOut[7] = {0};
   //int rlen = 
   userial.readBytesUntil(13, VarT, BUFFER_SIZE_T);
   for ( int i = 10; i < 16; ++i )
@@ -94,6 +96,7 @@ void USB_serial_stuff(){
         if (drivers[i] == &userial) {
           // Lets try first outputting something to our USerial to see if it will go out...
           userial.begin(baud);
+          userial.setTimeout(100);
 
         }
       }
@@ -123,8 +126,8 @@ void Turbo_Change_Speed(int TB_Spd4)
   userial.write("\r");
   // acknowledge change
   const int BUFFER_SIZE = 30;
-  char Var1[BUFFER_SIZE];
-  char VarOut[6];
+  char Var1[BUFFER_SIZE] = {0};
+  char VarOut[7] = {0};
   // int rlen =
   userial.readBytesUntil(13, Var1, BUFFER_SIZE);
   for (int i = 10; i < 16; ++i)
@@ -140,6 +143,7 @@ void Turbo_Change_Speed(int TB_Spd4)
   // for loop from a to b
   // rlen =
   userial.readBytesUntil(13, Var1, BUFFER_SIZE);
+  memset(VarOut, 0, sizeof(VarOut));
   for (int i = 10; i < 16; ++i)
     VarOut[i - 10] = Var1[i];
   // s = String(VarOut);
@@ -150,9 +154,13 @@ void Turbo_Change_Speed(int TB_Spd4)
 int Read_Status_Turbo (char *x, uint a, uint b) {
   userial.write(x);
   delay(50);
-  char Var1[TURBO_BUFFER_SIZE];
-  char VarOut[TURBO_BUFFER_SIZE];
-  userial.readBytesUntil(13, Var1, TURBO_BUFFER_SIZE);
+  char Var1[TURBO_BUFFER_SIZE] = {0};
+  char VarOut[TURBO_BUFFER_SIZE] = {0};
+  size_t bytesRead = userial.readBytesUntil(13, Var1, TURBO_BUFFER_SIZE);
+  if (bytesRead < b || b - a >= TURBO_BUFFER_SIZE) {
+    turbo_message[0] = '\0';
+    return -1;
+  }
   // Copy characters
   for (uint i = a; i < b; ++i)
     VarOut[i - a] = Var1[i];
@@ -247,7 +255,9 @@ int Turbo_Check(int TB_Spd1) {
   Serial.println("W");
 
   int T = 0;
-  if (Status_Turbo_B[0] == 0 && Status_Turbo_B[1] > m && Status_Turbo_B[2] < 15) {
+  if (Status_Turbo_B[0] == 0 &&
+      Status_Turbo_B[1] > m &&
+      Status_Turbo_B[2] < TURBO_READY_MAX_DRIVE_POWER_W) {
     T = 1;
 //    Serial.println("Set turbo check value to one");
   };

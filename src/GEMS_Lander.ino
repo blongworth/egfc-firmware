@@ -70,10 +70,118 @@ char turbo_message[30];
 
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 
+const unsigned long TURBO_START_TIMEOUT_MS = 300000UL;
+const unsigned long TURBO_START_CHECK_INTERVAL_MS = 5000UL;
+const int TURBO_READY_MAX_DRIVE_POWER_W = 6;
+const unsigned long SPEED_CHANGE_SETTLE_MS = 400000UL;
+const unsigned long SPEED_CHANGE_STATUS_INTERVAL_MS = 5000UL;
+const unsigned long RGA_COMMAND_TIMEOUT_MS = 5000UL;
+const unsigned long RGA_MASS_TIMEOUT_MS = 3000UL;
+const unsigned long TURBO_SPINDOWN_STATUS_INTERVAL_MS = 1500UL;
+const unsigned long LED_BLINK_INTERVAL_MS = 500UL;
+const unsigned long RGA_NOISE_FLOOR_SETTLE_MS = 1000UL;
+const unsigned long ACQUISITION_TURBO_CHECK_INTERVAL_MS = 5000UL;
+
+const byte STARTUP_NONE = 0;
+const byte STARTUP_TURBO_ONLY = 1;
+const byte STARTUP_FULL_SYSTEM = 2;
+
+const byte RGA_START_IDLE = 0;
+const byte RGA_START_SEND_FL_ON = 1;
+const byte RGA_START_WAIT_FL_ON = 2;
+const byte RGA_START_SEND_CL = 3;
+const byte RGA_START_WAIT_CL = 4;
+const byte RGA_START_SEND_CA = 5;
+const byte RGA_START_WAIT_CA = 6;
+const byte RGA_START_SET_NF = 7;
+const byte RGA_START_WAIT_NF = 8;
+const byte RGA_START_SEND_ZERO = 9;
+const byte RGA_START_WAIT_ZERO = 10;
+
+const byte FILAMENT_OFF_IDLE = 0;
+const byte FILAMENT_OFF_READ_INITIAL = 1;
+const byte FILAMENT_OFF_SEND_OFF = 2;
+const byte FILAMENT_OFF_WAIT_STATUS = 3;
+const byte FILAMENT_OFF_READ_VERIFY = 4;
+const byte FILAMENT_OFF_DONE = 5;
+const byte FILAMENT_OFF_FAILED = 6;
+
+const byte STOP_IDLE = 0;
+const byte STOP_FILAMENT_OFF = 1;
+const byte STOP_SEND_TURBO_STOP = 2;
+const byte STOP_WAIT_TURBO = 3;
+
+struct StartupSequenceState {
+  bool active;
+  byte mode;
+  int targetSpeed;
+  unsigned long startedMs;
+  unsigned long lastCheckMs;
+  unsigned long lastBlinkMs;
+  bool ledOn;
+};
+
+struct SpeedChangeState {
+  bool active;
+  int targetSpeed;
+  unsigned long startedMs;
+  unsigned long lastStatusMs;
+};
+
+struct FilamentOffState {
+  bool active;
+  byte phase;
+  int attempts;
+  unsigned long commandMs;
+  unsigned long lastBlinkMs;
+  bool ledOn;
+  bool success;
+};
+
+struct StopSequenceState {
+  bool active;
+  bool failed;
+  byte phase;
+  unsigned long lastStatusMs;
+  unsigned long lastBlinkMs;
+  bool ledOn;
+};
+
+struct RgaStartState {
+  bool active;
+  byte phase;
+  unsigned long commandMs;
+};
+
+struct RgaMeasurementRecord {
+  char timestamp[25];
+  int mass;
+  int current;
+  bool valid;
+};
+
+struct RgaAcquisitionState {
+  bool waitingForResponse;
+  byte massIndex;
+  int requestedMass;
+  unsigned long requestMs;
+  unsigned long lastTurboCheckMs;
+  RgaMeasurementRecord cycle[NUM_AMUS];
+};
+
+StartupSequenceState startupSequence = {false, STARTUP_NONE, 0, 0, 0, 0, false};
+SpeedChangeState speedChange = {false, 0, 0, 0};
+FilamentOffState filamentOff = {false, FILAMENT_OFF_IDLE, 0, 0, 0, false, false};
+StopSequenceState stopSequence = {false, false, STOP_IDLE, 0, 0, false};
+RgaStartState rgaStart = {false, RGA_START_IDLE, 0};
+RgaAcquisitionState rgaAcquisition = {false, 0, 0, 0, 0, {}};
+bool standaloneFilamentStop = false;
+
 ////////////////////// Setup //////////////////////
 
 void setup() {
   Serial.begin(9600);
+  Serial.setTimeout(50);
 
   // setup teensy crash reporting
   if (CrashReport) {
@@ -84,6 +192,7 @@ void setup() {
   Serial.printf("\n\nGEMS Lander %s \n", compileTime);
 
   RGA_SERIAL.begin(28800, SERIAL_8N1);  //RGA
+  RGA_SERIAL.setTimeout(100);
 
   pinMode(LED_PIN, OUTPUT);
 
@@ -105,24 +214,26 @@ void setup() {
   RGA_SERIAL.write("\r");
   delay(100);
   RGA_SERIAL.write("IN0\r");
-  while (RGA_SERIAL.available() < 1) {
-    delay(10);
+  if (Wait_For_RGA_Status_Byte(3000)) {
+    Serial.print("RGA Status: ");
+    Serial.println(RGA_SERIAL.read(), BIN);
+  } else {
+    Serial.println("Timed out waiting for RGA IN0 status byte");
   }
-  Serial.print("RGA Status: ");
-  Serial.println(RGA_SERIAL.read(), BIN);
   delay(100);
   rga_serial_flush();
   RGA_SERIAL.write("FL0\r");
   Serial.print("Waiting for FL status byte");
-  while (RGA_SERIAL.available() < 1) {
-    delay(500);
-    Serial.print(".");
+  if (Wait_For_RGA_Status_Byte(5000)) {
+    Serial.println();
+    RGA_SERIAL.readBytes(RGA, 3);
+    Serial.println("RGA filament off");
+    Serial.print("RGA Status: ");
+    Serial.println(RGA[0], BIN);
+  } else {
+    Serial.println();
+    Serial.println("Timed out waiting for FL0 status byte");
   }
-  Serial.println();
-  RGA_SERIAL.readBytes(RGA, 3);
-  Serial.println("RGA filament off");
-  Serial.print("RGA Status: ");
-  Serial.println(RGA[0], BIN);
 
   // see if the card is present and can be initialized:
   Serial.println("Initializing SD card...");
@@ -205,206 +316,13 @@ void setup() {
 ////////////////////// Main Loop //////////////////////
 
 void loop() {
+  USB_serial_stuff();
 
-  // listen for surface message
-#ifdef USE_ETHERNET
-  int packetSize = Udp.parsePacket();
-#else
-  int packetSize = Serial.available();
-#endif
-
-  if (packetSize) {
-    //int rlen
-#ifdef USE_ETHERNET
-    Udp.readBytesUntil('\r', SrfMsg, BUFFER_SIZE);
-#else
-    Serial.readBytesUntil('\r', SrfMsg, BUFFER_SIZE);
-#endif
-
-    // if serial message !ZFS: Filament Stop
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == 'F' && SrfMsg[3] == 'S') {
-      float FL = 1;
-      Serial.println("Filament off");
-      while (FL != 0) {
-        RGA_SERIAL.write("FL0\r");
-        delay(100);
-        digitalWrite(LED_PIN, HIGH);
-        delay(500);
-        digitalWrite(LED_PIN, LOW);
-        delay(500);
-        while (RGA_SERIAL.available() == 0) {
-          delay(1000);
-        }
-        char RGA[4];
-        RGA_SERIAL.readBytes(RGA, 3);
-        FL = Read_Status_RGA(fil_chk, 1, 4);
-        Serial.print("FL?: ");
-            Serial.println(FL);
-      }
-    }
-
-    // if surface message !Z21 change status to turn off RGA filament
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '2' && SrfMsg[3] == '1') {
-      Status = 3;
-      OnOff = 0;
-    }
-
-    // if surface message !Z22 change status to stop mass spec and ADV
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '2' && SrfMsg[3] == '2') {
-      Status = 3;
-      OnOff = 0;
-    }
-
-    // if surface message !Z20 safely stop turbopump
-    // Stop acquisition first, verify RGA filament is off, then stop turbo.
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '2' && SrfMsg[3] == '0') {
-      Serial.println("Safe turbopump stop requested");
-      Status = 3;
-      OnOff = 0;
-    }
-
-   // if surface message !Z10 change status to start turbo
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '0') {
-      turbo_start(TB_Spd);
-    }
-    // if surface message !Z12 change status to start mass spec and ADV
-    // Use if turbo already running and system pumped down
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '2') {
-      Status = 4;
-      OnOff = 0;
-    }
-
-    // if surface message !Z11 change status to start mass spec and ADV
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '1') {
-      Status = 1;
-      OnOff = 1;
-    }
-
-    // if surface message !RS change turbo speed
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'R' && SrfMsg[2] == 'S') {
-      Serial.println("change turbo speed loop");
-      char TB_Spdc[4];
-      StatusMsg(9);
-      TB_Spdc[0] = SrfMsg[3];
-      TB_Spdc[1] = SrfMsg[4];
-      TB_Spdc[2] = SrfMsg[5];
-      TB_Spdc[3] = SrfMsg[6];
-      StatusMsg(10);
-      TB_Spd = atoi(TB_Spdc);
-      StatusMsg(11);
-      Serial.println(TB_Spd);
-      Turbo_Change_Speed(TB_Spd);
-      StatusMsg(12);
-      int c_s = 0;
-      // wait for 5 min adjust speed
-      while (c_s < 80) {
-        StatusMsg(3);
-        delay(5000);
-        c_s = c_s + 1;
-      }
-    }
-
-#ifdef USE_ETHERNET
-    // if surface message T read time, OnOff
-    if (SrfMsg[0] == 'T') {
-      unsigned long unix_time = strtoul(SrfMsg + 1, NULL, 10);
-      // Check if time is valid (after 2025-01-01 and before uint32 max)
-      if (unix_time > 1735689600UL && unix_time < 4294967295UL) {
-        Teensy3Clock.set(unix_time);
-        setTime(unix_time);
-        Serial.print("Setting time to: ");
-        Serial.println(unix_time);
-      } else {
-        Serial.print("Invalid time received: ");
-        Serial.println(unix_time);
-        Serial.print("Surface message: ");
-        Serial.println(SrfMsg);
-      }
-      delay(100);
-      Udp.beginPacket(destinationIP, destinationPort);
-      Udp.print("?");
-      Udp.print(OnOff);
-      Udp.write(13);
-      Udp.endPacket();
-    }
-
-    // if message is ? then print status to serial monitor
-    if (SrfMsg[0] == '?') {
-      Udp.beginPacket(destinationIP, destinationPort);
-      Udp.print("?");
-      Udp.print(Status);
-      Udp.write(13);
-      Udp.endPacket();
-    }
+  if (readSurfaceMessage()) {
+    handleSurfaceMessage();
   }
 
-  // Start Turbo Mass Spec and ADV
-  if (Status == 1) {
-    OnOff=1;
-    GEMS_Start(TB_Spd);
-    Udp.beginPacket(destinationIP, destinationPort);
-    Udp.print("?");
-    Udp.print(OnOff);
-    Udp.write(13);
-    Udp.endPacket();
-    digitalWrite(LED_PIN, HIGH);
-  }
-
-  // Stop Turbo Mass Spec and ADV
-  if (Status == 3) {
-    digitalWrite(LED_PIN, LOW);
-    GEMS_Stop();
-    Status = 0;
-    OnOff=0;
-    Udp.beginPacket(destinationIP, destinationPort);
-    Udp.print("?");
-    Udp.print(OnOff);
-    Udp.write(13);
-    Udp.endPacket();
-    digitalWrite(LED_PIN, LOW);
-  }
-#else
-
-    // if message is ? then print status to serial monitor
-    if (SrfMsg[0] == '?') {
-      Serial.print("?");
-      Serial.print(Status);
-      Serial.println();
-    }
-  }
-
-  // Start Turbo Mass Spec
-  if (Status == 1) {
-    OnOff=1;
-    GEMS_Start(TB_Spd);
-    Serial.print("?");
-    Serial.print(OnOff);
-    Serial.println();
-    digitalWrite(LED_PIN, HIGH);
-  }
-
-  // Stop Turbo Mass Spec
-  if (Status == 3) {
-    digitalWrite(LED_PIN, LOW);
-    GEMS_Stop();
-    Status = 0;
-    OnOff=0;
-    Serial.print("?");
-    Serial.print(OnOff);
-    Serial.println();
-    digitalWrite(LED_PIN, LOW);
-  }
-#endif
-
-  // Start Filament if Turbo looks OK
-  if (Status == 4) {
-    if (Turbo_Check(TB_Spd) == 1) {
-      startRGA();
-    } else {
-      Serial.println("Turbo not ready!");
-      Status = 0;
-    }
-  }
+  serviceAsyncOperations();
 
   // cycle file every 4 hours
   if (hour() % 4 == 0)
@@ -420,19 +338,6 @@ void loop() {
     }
   }
 
-  // Measurement loop
-  if (Status == 2) {
-    rga_serial_flush();
-    Serial.println(TB_Spd);
-    // measure AMUS in AMU array sequentially
-    for (byte i = 0; i < NUM_AMUS; i++) {
-      GEMS_Measurement(TB_Spd, AMUS[i]);
-    }
-
-    // send turbo status once per mass cycle
-    StatusMsg(3);
-  }
-
   // Check valve timer and swap valve if needed
   // Log timestamp and position if changed
   #ifdef VALVE_CHANGE_TIME
@@ -441,13 +346,145 @@ void loop() {
   }
   #endif
 
-  USB_serial_stuff();
-
   printLoopRate();
 }
 
 
 ////////////////////// Functions //////////////////////
+
+bool readSurfaceMessage() {
+#ifdef USE_ETHERNET
+  int packetSize = Udp.parsePacket();
+  if (!packetSize) {
+    return false;
+  }
+  rlen = Udp.readBytesUntil('\r', SrfMsg, BUFFER_SIZE - 1);
+#else
+  if (!Serial.available()) {
+    return false;
+  }
+  rlen = Serial.readBytesUntil('\r', SrfMsg, BUFFER_SIZE - 1);
+#endif
+  if (rlen < 0) {
+    rlen = 0;
+  }
+  SrfMsg[rlen] = '\0';
+  return rlen > 0;
+}
+
+void sendStatusResponse(int value) {
+#ifdef USE_ETHERNET
+  Udp.beginPacket(destinationIP, destinationPort);
+  Udp.print("?");
+  Udp.print(value);
+  Udp.write(13);
+  Udp.endPacket();
+#else
+  Serial.print("?");
+  Serial.print(value);
+  Serial.println();
+#endif
+}
+
+bool parseTurboSpeedCommand(int *speedOut) {
+  for (byte i = 3; i < 7; i++) {
+    if (SrfMsg[i] < '0' || SrfMsg[i] > '9') {
+      return false;
+    }
+  }
+
+  char speedText[5];
+  speedText[0] = SrfMsg[3];
+  speedText[1] = SrfMsg[4];
+  speedText[2] = SrfMsg[5];
+  speedText[3] = SrfMsg[6];
+  speedText[4] = '\0';
+  *speedOut = atoi(speedText);
+  return true;
+}
+
+void handleSurfaceMessage() {
+  if (SrfMsg[0] == '?' && SrfMsg[1] == '\0') {
+    sendStatusResponse(Status);
+    return;
+  }
+
+  if (SrfMsg[0] == 'T') {
+    unsigned long unix_time = strtoul(SrfMsg + 1, NULL, 10);
+    if (unix_time > 1735689600UL && unix_time < 4294967295UL) {
+      Teensy3Clock.set(unix_time);
+      setTime(unix_time);
+      Serial.print("Setting time to: ");
+      Serial.println(unix_time);
+    } else {
+      Serial.print("Invalid time received: ");
+      Serial.println(unix_time);
+      Serial.print("Surface message: ");
+      Serial.println(SrfMsg);
+    }
+    sendStatusResponse(OnOff);
+    return;
+  }
+
+  if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == 'F' && SrfMsg[3] == 'S') {
+    Serial.println("Filament off requested");
+    BeginStandaloneFilamentStop();
+    return;
+  }
+
+  if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '2' &&
+      (SrfMsg[3] == '0' || SrfMsg[3] == '1' || SrfMsg[3] == '2')) {
+    Serial.println("Safe stop requested");
+    BeginStopSequence();
+    return;
+  }
+
+  if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '0') {
+    BeginStartupSequence(STARTUP_TURBO_ONLY, TB_Spd);
+    return;
+  }
+
+  if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '1') {
+    BeginStartupSequence(STARTUP_FULL_SYSTEM, TB_Spd);
+    sendStatusResponse(OnOff);
+    return;
+  }
+
+  if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '2') {
+    Status = 4;
+    OnOff = 0;
+    return;
+  }
+
+  if (SrfMsg[0] == '!' && SrfMsg[1] == 'R' && SrfMsg[2] == 'S') {
+    int requestedSpeed = TB_Spd;
+    if (!parseTurboSpeedCommand(&requestedSpeed)) {
+      Serial.print("Invalid turbo speed command: ");
+      Serial.println(SrfMsg);
+      return;
+    }
+    BeginSpeedChange(requestedSpeed);
+  }
+}
+
+void serviceAsyncOperations() {
+  ProcessSpeedChange();
+  ProcessStartupSequence();
+  ProcessStandaloneFilamentStop();
+
+  if (Status == 4 && !rgaStart.active && !startupSequence.active && !stopSequence.active) {
+    if (Turbo_Check(TB_Spd) == 1) {
+      BeginRgaStartSequence();
+    } else {
+      Serial.println("Turbo not ready!");
+      Status = 0;
+    }
+  }
+
+  ProcessRgaStartSequence();
+  ProcessStopSequence();
+  ProcessRgaAcquisition();
+}
 
 void printLoopRate() {
   static unsigned long previousMillis = 0;
@@ -484,215 +521,497 @@ void createNewDataFile()
 }
 
 void GEMS_Start(int TB_Spd3) {
-  StatusMsg(1);
-
-  // ADV Start
-  digitalWrite(LED_PIN, HIGH);
-
-  StatusMsg(2);
-
-  // Turbo Start
-  Serial.println("Turbo Starting ...");
-  Turbo_Change_Speed(TB_Spd3);
-    Serial.println("StartTurbo");
-  startTurbo();
-  int c_start = 0;
-  // wait for 5 min startup
-  while (c_start < 300) {
-    digitalWrite(LED_PIN, HIGH);
-    StatusMsg(3);
-    Turbo = Turbo_Check(TB_Spd3);
-    delay(500);
-    c_start = c_start + 1;
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
-  }
-  StatusMsg(3);
-  delay(1000);
-  int d = Turbo_Check(TB_Spd3);
-  Serial.print("Turbo check final:");
-  Serial.println(d);
-
-  // If turbo running, start RGA
-  if (d == 1) {
-    startRGA();
-  } else {
-    Serial.println("Turbo failed to start, stopping turbo");
-    StatusMsg(5);
-    Status = 3;
-  }
+  BeginStartupSequence(STARTUP_FULL_SYSTEM, TB_Spd3);
 }
 
 void turbo_start(int TB_Spd3) {
-  StatusMsg(1);
-
-  digitalWrite(LED_PIN, HIGH);
-
-  StatusMsg(2);
-
-  // Turbo Start
-  Serial.println("Turbo Starting ...");
-  Turbo_Change_Speed(TB_Spd3);
-    Serial.println("StartTurbo");
-  startTurbo();
-  int c_start = 0;
-  // wait for 5 min startup
-  // should do this as a timer-polled state to avoid blocking
-  while (c_start < 300) {
-    digitalWrite(LED_PIN, HIGH);
-    StatusMsg(3);
-    Turbo = Turbo_Check(TB_Spd3);
-    delay(500);
-    c_start = c_start + 1;
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
-  }
-  StatusMsg(3);
-  delay(1000);
-  int d = Turbo_Check(TB_Spd3);
-  Serial.print("Turbo check final:");
-  Serial.println(d);
+  BeginStartupSequence(STARTUP_TURBO_ONLY, TB_Spd3);
 }
 
 void GEMS_Stop() {
-  StatusMsg(6);
+  BeginStopSequence();
+}
 
-  if (!Ensure_RGA_Filament_Off()) {
-    Serial.println("RGA filament did not confirm off; turbo stop skipped");
-    StatusMsg(5);
-    return;
-  }
-
-  Serial.println("Filament off");
-
-  StatusMsg(3);
-  StatusMsg(7);
-  digitalWrite(LED_PIN, HIGH);
-  StatusMsg(8);
-
-  Serial.println("Stop turbopump");
-
-  stopTurbo();
-
-  int TurboSpeed = 999;
-  while (TurboSpeed > 1) {
-    Get_Status_Turbo_B(Status_Turbo_B);
-    TurboSpeed = Status_Turbo_B[1];
-    digitalWrite(LED_PIN, HIGH);
-    delay(1000);    
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
-  }
-  StatusMsg(3);
-  StatusMsg(9);
+void startRGA() {
+  BeginRgaStartSequence();
 }
 
 bool Wait_For_RGA_Status_Byte(unsigned long timeoutMs) {
   unsigned long startMs = millis();
   while (RGA_SERIAL.available() < 1 && millis() - startMs < timeoutMs) {
-    delay(100);
+    USB_serial_stuff();
+    delay(1);
   }
 
   return RGA_SERIAL.available() >= 1;
 }
 
 bool Ensure_RGA_Filament_Off() {
-  const int maxFilamentOffAttempts = 10;
-
   float FL = Read_Status_RGA(fil_chk, 1, 4);
   Serial.print("FL?: ");
   Serial.println(FL);
-  if (FL <= 0.01) {
-    return true;
-  }
-
-  for (int attempt = 0; attempt < maxFilamentOffAttempts; attempt++) {
-    Serial.println("turning off RGA filament");
-    RGA_SERIAL.write("FL0\r");
-    delay(100);
-
-    digitalWrite(LED_PIN, HIGH);
-    delay(500);
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
-
-    if (!Wait_For_RGA_Status_Byte(5000)) {
-      Serial.println("Timed out waiting for FL status byte");
-      continue;
-    }
-
-    RGA_SERIAL.readBytes(RGA, 3);
-    FL = Read_Status_RGA(fil_chk, 1, 4);
-    Serial.print("FL?: ");
-    Serial.println(FL);
-    if (FL <= 0.01) {
-      return true;
-    }
-  }
-
-  return false;
+  return FL == FL && FL <= 0.01;
 }
 
-void startRGA()
-{
+void UpdateBlink(bool *ledOn, unsigned long *lastBlinkMs) {
+  unsigned long nowMs = millis();
+  if (nowMs - *lastBlinkMs < LED_BLINK_INTERVAL_MS) {
+    return;
+  }
+
+  *ledOn = !*ledOn;
+  *lastBlinkMs = nowMs;
+  digitalWrite(LED_PIN, *ledOn ? HIGH : LOW);
+}
+
+void BeginSpeedChange(int targetSpeed) {
+  Serial.println("change turbo speed");
+  StatusMsg(9);
+  StatusMsg(10);
+  TB_Spd = targetSpeed;
+  StatusMsg(11);
+  Serial.println(TB_Spd);
+  Turbo_Change_Speed(TB_Spd);
+  StatusMsg(12);
+
+  speedChange.active = true;
+  speedChange.targetSpeed = TB_Spd;
+  speedChange.startedMs = millis();
+  speedChange.lastStatusMs = 0;
+}
+
+void ProcessSpeedChange() {
+  if (!speedChange.active) {
+    return;
+  }
+
+  unsigned long nowMs = millis();
+  if (speedChange.lastStatusMs == 0 || nowMs - speedChange.lastStatusMs >= SPEED_CHANGE_STATUS_INTERVAL_MS) {
+    StatusMsg(3);
+    speedChange.lastStatusMs = nowMs;
+  }
+
+  if (nowMs - speedChange.startedMs >= SPEED_CHANGE_SETTLE_MS) {
+    speedChange.active = false;
+    Serial.println("Turbo speed settle window complete");
+  }
+}
+
+void BeginStartupSequence(byte startupMode, int targetSpeed) {
+  if (startupSequence.active) {
+    Serial.println("Startup already in progress");
+    return;
+  }
+
+  stopSequence.active = false;
+  stopSequence.failed = false;
+  standaloneFilamentStop = false;
+  filamentOff.active = false;
+  filamentOff.phase = FILAMENT_OFF_IDLE;
+  ResetRgaAcquisition();
+
+  startupSequence.active = true;
+  startupSequence.mode = startupMode;
+  startupSequence.targetSpeed = targetSpeed;
+  startupSequence.startedMs = millis();
+  startupSequence.lastCheckMs = 0;
+  startupSequence.lastBlinkMs = millis();
+  startupSequence.ledOn = true;
+
+  Status = 1;
+  OnOff = startupMode == STARTUP_FULL_SYSTEM ? 1 : 0;
+  StatusMsg(1);
+  digitalWrite(LED_PIN, HIGH);
+  StatusMsg(2);
+
+  Serial.println("Turbo Starting ...");
+  Turbo_Change_Speed(targetSpeed);
+  Serial.println("StartTurbo");
+  startTurbo();
+}
+
+void CompleteStartupSequence(bool turboReady) {
+  byte startupMode = startupSequence.mode;
+  startupSequence.active = false;
+  startupSequence.mode = STARTUP_NONE;
+
+  StatusMsg(3);
+  Serial.print("Turbo check final:");
+  Serial.println(turboReady ? 1 : 0);
+
+  if (!turboReady) {
+    Serial.println("Turbo failed to start, stopping turbo");
+    StatusMsg(5);
+    BeginStopSequence();
+    return;
+  }
+
+  if (startupMode == STARTUP_FULL_SYSTEM) {
+    Status = 4;
+    BeginRgaStartSequence();
+  } else {
+    Status = 0;
+    OnOff = 0;
+    digitalWrite(LED_PIN, LOW);
+  }
+}
+
+void ProcessStartupSequence() {
+  if (!startupSequence.active) {
+    return;
+  }
+
+  UpdateBlink(&startupSequence.ledOn, &startupSequence.lastBlinkMs);
+
+  unsigned long nowMs = millis();
+  if (startupSequence.lastCheckMs == 0 ||
+      nowMs - startupSequence.lastCheckMs >= TURBO_START_CHECK_INTERVAL_MS) {
+    StatusMsg(3);
+    Turbo = Turbo_Check(startupSequence.targetSpeed);
+    startupSequence.lastCheckMs = nowMs;
+    if (Turbo == 1) {
+      CompleteStartupSequence(true);
+      return;
+    }
+  }
+
+  if (nowMs - startupSequence.startedMs >= TURBO_START_TIMEOUT_MS) {
+    int ready = Turbo_Check(startupSequence.targetSpeed);
+    CompleteStartupSequence(ready == 1);
+  }
+}
+
+void BeginFilamentOffTask() {
+  filamentOff.active = true;
+  filamentOff.phase = FILAMENT_OFF_READ_INITIAL;
+  filamentOff.attempts = 0;
+  filamentOff.commandMs = 0;
+  filamentOff.lastBlinkMs = millis();
+  filamentOff.ledOn = false;
+  filamentOff.success = false;
+}
+
+void DrainRgaStatusBytes() {
+  memset(RGA, 0, sizeof(RGA));
+  RGA_SERIAL.readBytes(RGA, 3);
+}
+
+void ProcessFilamentOffTask() {
+  if (!filamentOff.active) {
+    return;
+  }
+
+  const int maxFilamentOffAttempts = 10;
+  unsigned long nowMs = millis();
+
+  switch (filamentOff.phase) {
+    case FILAMENT_OFF_READ_INITIAL: {
+      float FL = Read_Status_RGA(fil_chk, 1, 4);
+      Serial.print("FL?: ");
+      Serial.println(FL);
+      if (FL == FL && FL <= 0.01) {
+        filamentOff.success = true;
+        filamentOff.phase = FILAMENT_OFF_DONE;
+        filamentOff.active = false;
+      } else {
+        filamentOff.phase = FILAMENT_OFF_SEND_OFF;
+      }
+      break;
+    }
+
+    case FILAMENT_OFF_SEND_OFF:
+      Serial.println("turning off RGA filament");
+      rga_serial_flush();
+      RGA_SERIAL.write("FL0\r");
+      filamentOff.commandMs = nowMs;
+      filamentOff.phase = FILAMENT_OFF_WAIT_STATUS;
+      break;
+
+    case FILAMENT_OFF_WAIT_STATUS:
+      UpdateBlink(&filamentOff.ledOn, &filamentOff.lastBlinkMs);
+      if (RGA_SERIAL.available() > 0) {
+        DrainRgaStatusBytes();
+        filamentOff.phase = FILAMENT_OFF_READ_VERIFY;
+      } else if (nowMs - filamentOff.commandMs >= RGA_COMMAND_TIMEOUT_MS) {
+        Serial.println("Timed out waiting for FL status byte");
+        filamentOff.attempts++;
+        if (filamentOff.attempts >= maxFilamentOffAttempts) {
+          filamentOff.phase = FILAMENT_OFF_FAILED;
+          filamentOff.active = false;
+        } else {
+          filamentOff.phase = FILAMENT_OFF_SEND_OFF;
+        }
+      }
+      break;
+
+    case FILAMENT_OFF_READ_VERIFY: {
+      float FL = Read_Status_RGA(fil_chk, 1, 4);
+      Serial.print("FL?: ");
+      Serial.println(FL);
+      if (FL == FL && FL <= 0.01) {
+        filamentOff.success = true;
+        filamentOff.phase = FILAMENT_OFF_DONE;
+        filamentOff.active = false;
+      } else {
+        filamentOff.attempts++;
+        if (filamentOff.attempts >= maxFilamentOffAttempts) {
+          filamentOff.phase = FILAMENT_OFF_FAILED;
+          filamentOff.active = false;
+        } else {
+          filamentOff.phase = FILAMENT_OFF_SEND_OFF;
+        }
+      }
+      break;
+    }
+
+    default:
+      filamentOff.active = false;
+      break;
+  }
+}
+
+void BeginStandaloneFilamentStop() {
+  if (stopSequence.active) {
+    Serial.println("Stop sequence already controls filament state");
+    return;
+  }
+
+  standaloneFilamentStop = true;
+  BeginFilamentOffTask();
+}
+
+void ProcessStandaloneFilamentStop() {
+  if (!standaloneFilamentStop) {
+    return;
+  }
+
+  ProcessFilamentOffTask();
+  if (!filamentOff.active) {
+    standaloneFilamentStop = false;
+    if (filamentOff.success) {
+      Serial.println("RGA filament off");
+    } else {
+      Serial.println("RGA filament did not confirm off");
+      StatusMsg(5);
+    }
+  }
+}
+
+void BeginStopSequence() {
+  if (stopSequence.active) {
+    return;
+  }
+
+  startupSequence.active = false;
+  speedChange.active = false;
+  rgaStart.active = false;
+  standaloneFilamentStop = false;
+  ResetRgaAcquisition();
+  rga_serial_flush();
+
+  Status = 3;
+  OnOff = 0;
+  stopSequence.active = true;
+  stopSequence.failed = false;
+  stopSequence.phase = STOP_FILAMENT_OFF;
+  stopSequence.lastStatusMs = 0;
+  stopSequence.lastBlinkMs = millis();
+  stopSequence.ledOn = false;
+
+  StatusMsg(6);
+  BeginFilamentOffTask();
+}
+
+void FinishStopSequence(bool stopped) {
+  stopSequence.active = false;
+  stopSequence.phase = STOP_IDLE;
+  digitalWrite(LED_PIN, LOW);
+
+  if (stopped) {
+    StatusMsg(3);
+    StatusMsg(9);
+    Status = 0;
+    OnOff = 0;
+    sendStatusResponse(OnOff);
+  } else {
+    stopSequence.failed = true;
+    StatusMsg(5);
+    Serial.println("Stop sequence failed");
+  }
+}
+
+void ProcessStopSequence() {
+  if (!stopSequence.active) {
+    return;
+  }
+
+  unsigned long nowMs = millis();
+
+  switch (stopSequence.phase) {
+    case STOP_FILAMENT_OFF:
+      ProcessFilamentOffTask();
+      if (!filamentOff.active) {
+        if (!filamentOff.success) {
+          Serial.println("RGA filament did not confirm off; turbo stop skipped");
+          FinishStopSequence(false);
+          return;
+        }
+        Serial.println("Filament off");
+        StatusMsg(3);
+        StatusMsg(7);
+        digitalWrite(LED_PIN, HIGH);
+        StatusMsg(8);
+        stopSequence.phase = STOP_SEND_TURBO_STOP;
+      }
+      break;
+
+    case STOP_SEND_TURBO_STOP:
+      Serial.println("Stop turbopump");
+      stopTurbo();
+      stopSequence.lastStatusMs = 0;
+      stopSequence.lastBlinkMs = millis();
+      stopSequence.phase = STOP_WAIT_TURBO;
+      break;
+
+    case STOP_WAIT_TURBO:
+      UpdateBlink(&stopSequence.ledOn, &stopSequence.lastBlinkMs);
+      if (stopSequence.lastStatusMs == 0 ||
+          nowMs - stopSequence.lastStatusMs >= TURBO_SPINDOWN_STATUS_INTERVAL_MS) {
+        Get_Status_Turbo_B(Status_Turbo_B);
+        stopSequence.lastStatusMs = nowMs;
+        if (Status_Turbo_B[1] <= 1) {
+          FinishStopSequence(true);
+        }
+      }
+      break;
+
+    default:
+      FinishStopSequence(false);
+      break;
+  }
+}
+
+void BeginRgaStartSequence() {
+  if (rgaStart.active) {
+    return;
+  }
+
   Serial.println("Turbo On, ready to turn on filament");
   StatusMsg(4);
   StatusMsg(11);
-
   rga_serial_flush();
 
-  // Turn filament on
-  RGA_SERIAL.write("FL1\r");
-  while (RGA_SERIAL.available() < 1)
-  {
-    delay(1000);
-    Serial.println("Waiting for FL status byte");
+  Status = 4;
+  rgaStart.active = true;
+  rgaStart.phase = RGA_START_SEND_FL_ON;
+  rgaStart.commandMs = 0;
+}
+
+void FailRgaStart(const char *message) {
+  Serial.println(message);
+  rgaStart.active = false;
+  rgaStart.phase = RGA_START_IDLE;
+  StatusMsg(5);
+  BeginStopSequence();
+}
+
+void ProcessRgaStartSequence() {
+  if (!rgaStart.active) {
+    return;
   }
-  RGA_SERIAL.readBytes(RGA, 3);
 
-  Serial.println("FL on, Clearing electrometer");
+  unsigned long nowMs = millis();
 
-  // Calibrate electrometer
-  RGA_SERIAL.write("CL\r");
-  Serial.print("Waiting for CL status byte");
-  while (RGA_SERIAL.available() < 1)
-  {
-    delay(1000);
-    Serial.print(".");
+  switch (rgaStart.phase) {
+    case RGA_START_SEND_FL_ON:
+      RGA_SERIAL.write("FL1\r");
+      rgaStart.commandMs = nowMs;
+      rgaStart.phase = RGA_START_WAIT_FL_ON;
+      break;
+
+    case RGA_START_WAIT_FL_ON:
+      if (RGA_SERIAL.available() > 0) {
+        DrainRgaStatusBytes();
+        Serial.println("FL on, Clearing electrometer");
+        rgaStart.phase = RGA_START_SEND_CL;
+      } else if (nowMs - rgaStart.commandMs >= RGA_COMMAND_TIMEOUT_MS) {
+        FailRgaStart("Timed out waiting for FL status byte");
+      }
+      break;
+
+    case RGA_START_SEND_CL:
+      RGA_SERIAL.write("CL\r");
+      rgaStart.commandMs = nowMs;
+      rgaStart.phase = RGA_START_WAIT_CL;
+      break;
+
+    case RGA_START_WAIT_CL:
+      if (RGA_SERIAL.available() > 0) {
+        DrainRgaStatusBytes();
+        rgaStart.phase = RGA_START_SEND_CA;
+      } else if (nowMs - rgaStart.commandMs >= RGA_COMMAND_TIMEOUT_MS) {
+        FailRgaStart("Timed out waiting for CL status byte");
+      }
+      break;
+
+    case RGA_START_SEND_CA:
+      RGA_SERIAL.write("CA\r");
+      rgaStart.commandMs = nowMs;
+      rgaStart.phase = RGA_START_WAIT_CA;
+      break;
+
+    case RGA_START_WAIT_CA:
+      if (RGA_SERIAL.available() > 0) {
+        DrainRgaStatusBytes();
+        Serial.println("Electrometer cleared, setting noise floor");
+        rgaStart.phase = RGA_START_SET_NF;
+      } else if (nowMs - rgaStart.commandMs >= RGA_COMMAND_TIMEOUT_MS) {
+        FailRgaStart("Timed out waiting for CA status byte");
+      }
+      break;
+
+    case RGA_START_SET_NF:
+      setNF(NOISE_FLOOR);
+      rgaStart.commandMs = nowMs;
+      rgaStart.phase = RGA_START_WAIT_NF;
+      break;
+
+    case RGA_START_WAIT_NF:
+      if (nowMs - rgaStart.commandMs >= RGA_NOISE_FLOOR_SETTLE_MS) {
+        Serial.println("Noise floor set, zeroing electrometer");
+        rgaStart.phase = RGA_START_SEND_ZERO;
+      }
+      break;
+
+    case RGA_START_SEND_ZERO:
+      RGA_SERIAL.write("CA\r");
+      rgaStart.commandMs = nowMs;
+      rgaStart.phase = RGA_START_WAIT_ZERO;
+      break;
+
+    case RGA_START_WAIT_ZERO:
+      if (RGA_SERIAL.available() > 0) {
+        DrainRgaStatusBytes();
+        Serial.println("RGA ready!");
+        ResetRgaAcquisition();
+        Status = 2;
+        OnOff = 1;
+        rgaStart.active = false;
+        rgaStart.phase = RGA_START_IDLE;
+        StatusMsg(12);
+      } else if (nowMs - rgaStart.commandMs >= RGA_COMMAND_TIMEOUT_MS) {
+        FailRgaStart("Timed out waiting for zero status byte");
+      }
+      break;
+
+    default:
+      FailRgaStart("Invalid RGA start state");
+      break;
   }
-  Serial.println();
-  RGA_SERIAL.readBytes(RGA, 3);
+}
 
-  // Calibrate all
-  RGA_SERIAL.write("CA\r");
-  while (RGA_SERIAL.available() < 1)
-  {
-    delay(1000);
-  }
-  RGA_SERIAL.readBytes(RGA, 3);
-
-  Serial.println("Electrometer cleared, setting noise floor");
-
-  // Set noise floor
-  setNF(NOISE_FLOOR);
-  delay(1000);
-
-  Serial.println("Noise floor set, zeroing electrometer");
-
-  // zero electrometer
-  RGA_SERIAL.write("CA\r");
-  delay(25);
-  while (RGA_SERIAL.available() < 1)
-  {
-    delay(1000);
-    Serial.println("Waiting for CA status byte");
-  }
-  RGA_SERIAL.readBytes(RGA, 3);
-
-  Serial.println("RGA ready!");
-
-  Status = 2;
-  StatusMsg(12);
+bool RgaCommandInProgress() {
+  return rgaAcquisition.waitingForResponse || rgaStart.active || filamentOff.active;
 }
 
 #ifdef USE_ETHERNET
@@ -718,10 +1037,14 @@ void StatusMsg(int M) {
     Udp.print(Status_Turbo[8]);
     Udp.print(",");
     Udp.print(Status_Turbo[9]);
-    rga_serial_flush();
-    float SRS = Read_Status_RGA(fil_chk, 1, 4);
     Udp.print(",");
-    Udp.print(SRS);
+    if (RgaCommandInProgress()) {
+      Udp.print(9999);
+    } else {
+      rga_serial_flush();
+      float SRS = Read_Status_RGA(fil_chk, 1, 4);
+      Udp.print(SRS);
+    }
   }
   else {
     Udp.print(M);
@@ -751,9 +1074,14 @@ void StatusMsg(int M) {
     Serial.print(Status_Turbo[8]);
     Serial.print(",");
     Serial.print(Status_Turbo[9]);
-    rga_serial_flush();
-    float SRS = Read_Status_RGA(fil_chk, 1, 4);
-    Serial.print(SRS);
+    Serial.print(",");
+    if (RgaCommandInProgress()) {
+      Serial.print(9999);
+    } else {
+      rga_serial_flush();
+      float SRS = Read_Status_RGA(fil_chk, 1, 4);
+      Serial.print(SRS);
+    }
   }
   else {
     Serial.print(M);
@@ -780,32 +1108,54 @@ void printDigits(int digits) {
 }
 #endif
 
-void GEMS_Measurement(int TB_Spd2, int AMU_) {
-  int current;
+void ResetRgaAcquisition() {
+  rgaAcquisition.waitingForResponse = false;
+  rgaAcquisition.massIndex = 0;
+  rgaAcquisition.requestedMass = 0;
+  rgaAcquisition.requestMs = 0;
+  rgaAcquisition.lastTurboCheckMs = 0;
+
+  for (byte i = 0; i < NUM_AMUS; i++) {
+    rgaAcquisition.cycle[i].timestamp[0] = '\0';
+    rgaAcquisition.cycle[i].mass = AMUS[i];
+    rgaAcquisition.cycle[i].current = 0;
+    rgaAcquisition.cycle[i].valid = false;
+  }
+}
+
+void BeginRgaMeasurement(int AMU_) {
   rga_serial_flush();
   Serial.print("Measuring mass: ");
   Serial.println(AMU_);
-  RGA_ScanO(AMU_);
 
-  // Read ADV while waiting for response
-  // TODO: do this as non-blocking read function in main loop
-  elapsedMillis RGA_timer;
-  while (RGA_SERIAL.available() < 1 && RGA_timer < 3000) {
+  char scanCommand[10];
+  snprintf(scanCommand, sizeof(scanCommand), "MR%d\r", AMU_);
+  RGA_SERIAL.write(scanCommand);
+
+  rgaAcquisition.waitingForResponse = true;
+  rgaAcquisition.requestedMass = AMU_;
+  rgaAcquisition.requestMs = millis();
+}
+
+void StoreRgaMeasurement(bool valid, int current) {
+  byte index = rgaAcquisition.massIndex;
+  RgaMeasurementRecord *record = &rgaAcquisition.cycle[index];
+
+  getTimeISO8601(record->timestamp, sizeof(record->timestamp));
+  record->mass = rgaAcquisition.requestedMass;
+  record->current = current;
+  record->valid = valid;
+
+  if (!valid) {
+    Serial.print("RGA measurement timeout for mass ");
+    Serial.println(record->mass);
+    return;
   }
 
-  //read scan and write to SD + UDP
-  current = RGA_ScanI();
-
-  // TODO: populate data structure, output to file, etc. outside of function
-
-  char iso8601Time[25];
-  getTimeISO8601(iso8601Time, sizeof(iso8601Time));
-
   char csvRow[100];
-  snprintf(csvRow, sizeof(csvRow), "R:%s,%d,%d", iso8601Time, AMU_, current);
+  snprintf(csvRow, sizeof(csvRow), "R:%s,%d,%d", record->timestamp, record->mass, record->current);
   Serial.println(csvRow);
 
-  Serial.println("Writing to file.");
   if (dataFile) {
     dataFile.println(csvRow);
   } else {
@@ -815,19 +1165,30 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
   }
 
 #ifdef USE_ETHERNET
-  Serial.println("Writing to surface");
   Udp.beginPacket(destinationIP, destinationPort);
   Udp.println(csvRow);
   Udp.write(13);
   Udp.endPacket();
 #endif
+}
 
+void CheckTurboDuringAcquisition() {
+  if (Status != 2) {
+    return;
+  }
+
+  unsigned long nowMs = millis();
+  if (rgaAcquisition.lastTurboCheckMs != 0 &&
+      nowMs - rgaAcquisition.lastTurboCheckMs < ACQUISITION_TURBO_CHECK_INTERVAL_MS) {
+    return;
+  }
+  rgaAcquisition.lastTurboCheckMs = nowMs;
 
   // Stop GEMS if N_BAD_CHECKS occur within BAD_CHECK_TIME window
   const int N_BAD_CHECKS = 2;
   const unsigned long BAD_CHECK_TIME = 20000; // 20 seconds in milliseconds
 
-  if (Turbo_Check(TB_Spd2) != 1) {
+  if (Turbo_Check(TB_Spd) != 1) {
     StatusMsg(3); // Update status to indicate turbo problem
     Serial.println("Turbo problem detected");
     if (turbo_bad_timer > BAD_CHECK_TIME) {
@@ -839,7 +1200,7 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
       if (turbo_bad_ctr > N_BAD_CHECKS) {
         Serial.println("Turbo problem stop GEMS!");
         StatusMsg(5);
-        Status = 3;
+        BeginStopSequence();
         // Reset for next time
         turbo_bad_ctr = 0;
         turbo_bad_timer = 0;
@@ -849,6 +1210,49 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
     // Reset if no failures for BAD_CHECK_TIME
     turbo_bad_ctr = 0;
     turbo_bad_timer = 0;
+  }
+}
+
+void AdvanceRgaMeasurement() {
+  rgaAcquisition.waitingForResponse = false;
+  rgaAcquisition.massIndex++;
+
+  if (rgaAcquisition.massIndex >= NUM_AMUS) {
+    rgaAcquisition.massIndex = 0;
+    StatusMsg(3);
+  }
+
+  CheckTurboDuringAcquisition();
+}
+
+void ProcessRgaAcquisition() {
+  if (Status != 2) {
+    return;
+  }
+
+  if (!rgaAcquisition.waitingForResponse) {
+    BeginRgaMeasurement(AMUS[rgaAcquisition.massIndex]);
+    return;
+  }
+
+  if (RGA_SERIAL.available() >= 4) {
+    int current = RGA_ScanI();
+    StoreRgaMeasurement(true, current);
+    AdvanceRgaMeasurement();
+    return;
+  }
+
+  if (millis() - rgaAcquisition.requestMs >= RGA_MASS_TIMEOUT_MS) {
+    rga_serial_flush();
+    StoreRgaMeasurement(false, 0);
+    AdvanceRgaMeasurement();
+  }
+}
+
+void GEMS_Measurement(int TB_Spd2, int AMU_) {
+  (void)TB_Spd2;
+  if (!rgaAcquisition.waitingForResponse) {
+    BeginRgaMeasurement(AMU_);
   }
 }
 
@@ -863,7 +1267,6 @@ int int_out(char aaa[50], int a, int b) {
 
 void rga_serial_flush()
 {
-  delay(100);
   while (RGA_SERIAL.available()) {
     RGA_SERIAL.read();
   }
@@ -880,13 +1283,10 @@ void clear_rga_buff()
   RGA_SERIAL.write(13);
   RGA_SERIAL.write(13);
   RGA_SERIAL.write("IN0\r");  //Initialize communication, clear buffers, check ECU hardware
-  while(RGA_SERIAL.available() < 1)
-  {
-    delay(100);
+  if (Wait_For_RGA_Status_Byte(1000)) {
+    char RGA[4];
+    RGA_SERIAL.readBytes(RGA, 3);
   }
-  delay(100);
-  char RGA[4];
-  RGA_SERIAL.readBytes(RGA, 3);
   rga_serial_flush();
 }
 

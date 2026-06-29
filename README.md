@@ -7,7 +7,6 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 * valve control
 * seaphox/scallop interface
 * chamber switching, flushing logic and status logging
-* remove blocking code on turbo start and elsewhere
 * clean up command handling
 * move RGA and turbo code to modules
 
@@ -49,8 +48,8 @@ Commands are ASCII and terminated with carriage return (`\r`).
 | `?` | Query current status code. |
 | `T<unix>` | Set RTC/system time from Unix time. |
 | `!Z10` | Start turbopump only. |
-| `!Z11` | Start full system: turbopump, then RGA when turbo is ready. |
-| `!Z12` | Start RGA only if the turbopump is already ready. |
+| `!Z11` | Start full system: turbopump, then RGA after the turbo passes readiness checks and remains ready for at least 10 minutes. |
+| `!Z12` | Start RGA only after the turbopump passes readiness checks and remains ready for at least 10 minutes. |
 | `!Z20` | Safely stop turbopump: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `!Z21` | Stop system. |
 | `!Z22` | Stop system. |
@@ -85,7 +84,7 @@ Simple status events use a numeric payload, for example:
 !:2026-06-02T14:30:00Z,5
 ```
 
-Detailed status rows are sent when `StatusMsg(3)` runs. In serial builds, the payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, and RGA filament status.
+Detailed status rows are sent when `StatusMsg(3)` runs. In serial builds, the payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, and RGA filament status. The RGA filament field is `9999` when the RGA is busy with another command.
 
 ## Running the System
 
@@ -94,12 +93,13 @@ Detailed status rows are sent when `StatusMsg(3)` runs. In serial builds, the pa
 3. Confirm boot output shows RTC, RGA initialization, SD initialization, and `Surface ready`.
 4. If needed, set time with `T<unix>`.
 5. Start the full measurement sequence with `!Z11`.
-6. The firmware sets turbopump speed, starts the pump, checks for readiness, turns on the RGA filament, then begins mass scans.
+6. The firmware sets turbopump speed, starts the pump, checks for readiness without blocking the main loop, waits 10 minutes after the turbo first passes readiness checks, turns on the RGA filament, then begins mass scans.
 7. During measurement, RGA rows are printed, written to SD, and sent over UDP if Ethernet is enabled.
 8. Stop with `!Z20`, `!Z21`, or `!Z22`. `!Z20` explicitly verifies the RGA filament is off before stopping the turbopump.
 
 ## Notes
 
-- Several startup, shutdown, RGA, and turbopump operations are blocking in the current firmware.
+- Long startup, shutdown, speed-settle, filament-off, and mass-scan waits are serviced incrementally from the main loop. Low-level serial transactions still use short bounded timeouts.
+- RGA startup is gated by turbopump status and a tracked 10-minute minimum ready time. The timer starts when `Turbo_Check()` passes and is cleared if readiness is lost before RGA startup.
 - The active SD file is named `gems_YYYY-MM-DD-HH-MM.txt`.
 - Data files rotate every 4th hour when the minute equals `10`.

@@ -4,10 +4,13 @@ float Read_Status_RGA (char *x, int a, int b) { // function declaration {
   delay(50);
   // for loop from a to b
   const int BUFFER_SIZE = 30;
-  char Var1[BUFFER_SIZE];
-  char VarOut[6];
+  char Var1[BUFFER_SIZE] = {0};
+  char VarOut[6] = {0};
   //int rlen
-  RGA_SERIAL.readBytesUntil(13, Var1, BUFFER_SIZE);
+  size_t bytesRead = RGA_SERIAL.readBytesUntil(13, Var1, BUFFER_SIZE);
+  if (bytesRead < (size_t)b || b - a >= 6) {
+    return 9999.0;
+  }
   for ( int i = a; i < b; ++i ) {
     VarOut[i - a] = Var1[ i ];
   }
@@ -45,7 +48,11 @@ void RGA_ScanO(int MR)
 int RGA_ScanI() {
   char RGA[4];
   RGA_SERIAL.readBytes(RGA, 4);
-  int num = RGA[0] + RGA[1] * 256 + RGA[2] * 65536 + RGA[3] * 16777216;
+  uint32_t raw = ((uint32_t)(uint8_t)RGA[0]) |
+                 ((uint32_t)(uint8_t)RGA[1] << 8) |
+                 ((uint32_t)(uint8_t)RGA[2] << 16) |
+                 ((uint32_t)(uint8_t)RGA[3] << 24);
+  int32_t num = (int32_t)raw;
   return num;
 }
 
