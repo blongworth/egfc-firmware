@@ -1,6 +1,15 @@
 # EGFC GEMS Lander Firmware
 
-PlatformIO firmware for a Teensy 4.1 GEMS lander controller. The firmware controls an SRS RGA over `Serial4`, controls a turbopump over USB host serial, logs RGA mass-scan data to the built-in SD card, and can communicate with the surface over USB serial or Ethernet/UDP.
+Firmware for the eelgrass flux chamber GEMS lander controller. The firmware controls an SRS RGA over `Serial4`, controls a turbopump over USB host serial, logs RGA mass-scan data to the built-in SD card, and can communicate with the surface over USB serial or Ethernet/UDP.
+
+## TODO
+
+* valve control
+* seaphox/scallop interface
+* chamber switching, flushing logic and status logging
+* remove blocking code on turbo start and elsewhere
+* clean up command handling
+* move RGA and turbo code to modules
 
 ## Project Layout
 
