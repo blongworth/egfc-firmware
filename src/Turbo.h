@@ -14,14 +14,13 @@ struct TurboDetailedStatus {
   int electronicsTemp;
   int pumpBottomTemp;
   int motorTemp;
-  const char *lastRawMessage;
 };
 
-void startUSB();
-void startTurbo();
-void stopTurbo();
-void USB_serial_stuff();
-void Turbo_Change_Speed(int TB_Spd4);
-TurboDetailedStatus Turbo_Read_Detailed_Status();
-TurboBasicStatus Turbo_Read_Basic_Status();
-int Turbo_Check(int TB_Spd1);
+void turboBegin();
+void turboTask();
+void turboStart();
+void turboStop();
+void turboSetSpeedHz(int speedHz);
+TurboDetailedStatus turboReadDetailedStatus();
+TurboBasicStatus turboReadBasicStatus();
+bool turboIsReady(int targetSpeedHz);
