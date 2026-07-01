@@ -13,9 +13,9 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 
 ## Project Layout
 
-- `src/GEMS_Lander.ino`: main setup, loop, surface command handling, run/stop sequencing, SD logging, status messages.
-- `src/RGA.ino`: RGA status, noise-floor, and mass-scan helpers.
-- `src/Turbo.ino`: USB host setup, turbopump start/stop/speed/status helpers.
+- `src/main.cpp`: main setup, loop, surface command handling, run/stop sequencing, SD logging, status messages.
+- `src/RGA.cpp` and `src/RGA.h`: RGA status, noise-floor, and mass-scan helpers.
+- `src/Turbo.cpp` and `src/Turbo.h`: USB host setup, turbopump start/stop/speed/status helpers.
 - `platformio.ini`: Teensy 4.1 PlatformIO build configuration.
 
 ## Hardware and Defaults
@@ -28,7 +28,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Default turbopump speed: `1200 Hz`
 - RGA noise floor: `2`
 - RGA masses: `2, 15, 16, 18, 28, 30, 32, 33, 34, 40, 44`
-- Ethernet is disabled by default. Uncomment `#define USE_ETHERNET` in `src/GEMS_Lander.ino` to use UDP.
+- Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
 
 ## Build and Upload
 

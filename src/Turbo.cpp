@@ -1,7 +1,10 @@
 /// USB Stuff
+#include <Arduino.h>
 #include "USBHost_t36.h"
 
-// External declarations for variables defined in GEMS_Lander.ino
+#include "Turbo.h"
+
+// External declarations for variables defined in main.cpp
 extern char turbo_message[30];
 extern int Status_Turbo_B[3];
 extern const int TURBO_BUFFER_SIZE;
@@ -147,20 +150,20 @@ void Turbo_Change_Speed(int TB_Spd4)
   Serial.println("Rotation speed updated");
 }
 
-int Read_Status_Turbo (char *x, uint a, uint b) {
+int Read_Status_Turbo (char *x, unsigned int a, unsigned int b) {
   userial.write(x);
   delay(50);
   char Var1[TURBO_BUFFER_SIZE];
   char VarOut[TURBO_BUFFER_SIZE];
   userial.readBytesUntil(13, Var1, TURBO_BUFFER_SIZE);
   // Copy characters
-  for (uint i = a; i < b; ++i)
+  for (unsigned int i = a; i < b; ++i)
     VarOut[i - a] = Var1[i];
     
   // Add null terminator
   VarOut[b-a] = '\0';
   // Copy to global var with proper bounds checking
-  uint copyLen = b - a;
+  unsigned int copyLen = b - a;
   if (copyLen >= 30) {  // turbo_message size is 30
     copyLen = 29;       // leave room for null terminator
   }

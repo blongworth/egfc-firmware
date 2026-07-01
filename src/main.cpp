@@ -1,11 +1,15 @@
 /* GEMS Lander*/
 
-// uncomment to enable ethernet communication
+// Build the teensy41_ethernet environment to enable ethernet communication.
 // #define USE_ETHERNET
 //
+#include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
 #include <TimeLib.h>
+
+#include "RGA.h"
+#include "Turbo.h"
 
 #ifdef USE_ETHERNET
 #include <NativeEthernet.h>
@@ -65,10 +69,27 @@ int TB_Spd = 1200;
 unsigned long Timer;
 int turbo_bad_ctr = 0;
 elapsedMillis turbo_bad_timer;
-const int TURBO_BUFFER_SIZE = 30;
+extern const int TURBO_BUFFER_SIZE = 30;
 char turbo_message[30];
 
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
+
+void printLoopRate();
+void createNewDataFile();
+void GEMS_Start(int TB_Spd3);
+void turbo_start(int TB_Spd3);
+void GEMS_Stop();
+bool Wait_For_RGA_Status_Byte(unsigned long timeoutMs);
+bool Ensure_RGA_Filament_Off();
+void startRGA();
+void StatusMsg(int M);
+void printDigits(int digits);
+void GEMS_Measurement(int TB_Spd2, int AMU_);
+int int_out(char aaa[50], int a, int b);
+void rga_serial_flush();
+time_t getTeensy3Time();
+void clear_rga_buff();
+void getTimeISO8601(char *iso8601Time, size_t bufferSize);
 
 ////////////////////// Setup //////////////////////
 

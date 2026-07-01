@@ -1,4 +1,13 @@
 
+// RGA serial helpers.
+#include <Arduino.h>
+
+#include "RGA.h"
+
+#define RGA_SERIAL Serial4
+
+extern void rga_serial_flush();
+
 float Read_Status_RGA (char *x, int a, int b) { // function declaration {
   RGA_SERIAL.write(x);
   delay(50);
