@@ -9,12 +9,11 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 * chamber switching, flushing logic and status logging
 * remove blocking code on turbo start and elsewhere
 * clean up command handling
-* move RGA code to a clearer module boundary
 
 ## Project Layout
 
 - `src/main.cpp`: main setup, loop, surface command handling, run/stop sequencing, SD logging, status messages.
-- `src/RGA.cpp` and `src/RGA.h`: RGA status, noise-floor, and mass-scan helpers.
+- `src/RGA.cpp` and `src/RGA.h`: RGA serial module with status, noise-floor, and mass-scan helpers.
 - `src/Turbo.cpp` and `src/Turbo.h`: turbopump USB host module with start/stop/speed/status helpers.
 - `platformio.ini`: Teensy 4.1 PlatformIO build configuration.
 

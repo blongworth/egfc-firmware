@@ -16,7 +16,6 @@
 #include <NativeEthernetUdp.h>
 #endif
 
-#define RGA_SERIAL Serial4
 #define LED_PIN 13
 
 // noise floor to use for measurements
@@ -42,6 +41,7 @@ char FileName[32];
 File dataFile;
 bool file_created = false;
 TurboPump turbo;
+RGADevice rga(Serial4);
 
 #ifdef USE_ETHERNET
 // Set up ethernet
@@ -59,7 +59,7 @@ char fil_chk[5] = "FL?\r";
 
 const int BUFFER_SIZE = 100;
 char SrfMsg[BUFFER_SIZE];
-char RGA[4];
+char rgaStatusBytes[4];
 int Status;
 int Turbo;
 int OnOff=0;
@@ -82,7 +82,6 @@ void StatusMsg(int M);
 void printDigits(int digits);
 void GEMS_Measurement(int TB_Spd2, int AMU_);
 int int_out(char aaa[50], int a, int b);
-void rga_serial_flush();
 time_t getTeensy3Time();
 void clear_rga_buff();
 void getTimeISO8601(char *iso8601Time, size_t bufferSize);
@@ -100,7 +99,7 @@ void setup() {
 
   Serial.printf("\n\nGEMS Lander %s \n", compileTime);
 
-  RGA_SERIAL.begin(28800, SERIAL_8N1);  //RGA
+  rga.begin(28800, SERIAL_8N1);
 
   pinMode(LED_PIN, OUTPUT);
 
@@ -116,30 +115,30 @@ void setup() {
   turbo.begin();
 
   Serial.println("Initializing RGA...");
-  rga_serial_flush();
-  RGA_SERIAL.write("\r");
+  rga.flushInput();
+  rga.write("\r");
   delay(100);
-  RGA_SERIAL.write("\r");
+  rga.write("\r");
   delay(100);
-  RGA_SERIAL.write("IN0\r");
-  while (RGA_SERIAL.available() < 1) {
+  rga.write("IN0\r");
+  while (rga.available() < 1) {
     delay(10);
   }
   Serial.print("RGA Status: ");
-  Serial.println(RGA_SERIAL.read(), BIN);
+  Serial.println(rga.read(), BIN);
   delay(100);
-  rga_serial_flush();
-  RGA_SERIAL.write("FL0\r");
+  rga.flushInput();
+  rga.write("FL0\r");
   Serial.print("Waiting for FL status byte");
-  while (RGA_SERIAL.available() < 1) {
+  while (rga.available() < 1) {
     delay(500);
     Serial.print(".");
   }
   Serial.println();
-  RGA_SERIAL.readBytes(RGA, 3);
+  rga.readBytes(rgaStatusBytes, 3);
   Serial.println("RGA filament off");
   Serial.print("RGA Status: ");
-  Serial.println(RGA[0], BIN);
+  Serial.println(rgaStatusBytes[0], BIN);
 
   // see if the card is present and can be initialized:
   Serial.println("Initializing SD card...");
@@ -243,18 +242,18 @@ void loop() {
       float FL = 1;
       Serial.println("Filament off");
       while (FL != 0) {
-        RGA_SERIAL.write("FL0\r");
+        rga.write("FL0\r");
         delay(100);
         digitalWrite(LED_PIN, HIGH);
         delay(500);
         digitalWrite(LED_PIN, LOW);
         delay(500);
-        while (RGA_SERIAL.available() == 0) {
+        while (rga.available() == 0) {
           delay(1000);
         }
-        char RGA[4];
-        RGA_SERIAL.readBytes(RGA, 3);
-        FL = Read_Status_RGA(fil_chk, 1, 4);
+        char rgaBytes[4];
+        rga.readBytes(rgaBytes, 3);
+        FL = rga.readStatus(fil_chk, 1, 4);
         Serial.print("FL?: ");
             Serial.println(FL);
       }
@@ -439,7 +438,7 @@ void loop() {
 
   // Measurement loop
   if (Status == 2) {
-    rga_serial_flush();
+    rga.flushInput();
     Serial.println(TB_Spd);
     // measure AMUS in AMU array sequentially
     for (byte i = 0; i < NUM_AMUS; i++) {
@@ -606,17 +605,17 @@ void GEMS_Stop() {
 
 bool Wait_For_RGA_Status_Byte(unsigned long timeoutMs) {
   unsigned long startMs = millis();
-  while (RGA_SERIAL.available() < 1 && millis() - startMs < timeoutMs) {
+  while (rga.available() < 1 && millis() - startMs < timeoutMs) {
     delay(100);
   }
 
-  return RGA_SERIAL.available() >= 1;
+  return rga.available() >= 1;
 }
 
 bool Ensure_RGA_Filament_Off() {
   const int maxFilamentOffAttempts = 10;
 
-  float FL = Read_Status_RGA(fil_chk, 1, 4);
+  float FL = rga.readStatus(fil_chk, 1, 4);
   Serial.print("FL?: ");
   Serial.println(FL);
   if (FL <= 0.01) {
@@ -625,7 +624,7 @@ bool Ensure_RGA_Filament_Off() {
 
   for (int attempt = 0; attempt < maxFilamentOffAttempts; attempt++) {
     Serial.println("turning off RGA filament");
-    RGA_SERIAL.write("FL0\r");
+    rga.write("FL0\r");
     delay(100);
 
     digitalWrite(LED_PIN, HIGH);
@@ -638,8 +637,8 @@ bool Ensure_RGA_Filament_Off() {
       continue;
     }
 
-    RGA_SERIAL.readBytes(RGA, 3);
-    FL = Read_Status_RGA(fil_chk, 1, 4);
+    rga.readBytes(rgaStatusBytes, 3);
+    FL = rga.readStatus(fil_chk, 1, 4);
     Serial.print("FL?: ");
     Serial.println(FL);
     if (FL <= 0.01) {
@@ -656,55 +655,55 @@ void startRGA()
   StatusMsg(4);
   StatusMsg(11);
 
-  rga_serial_flush();
+  rga.flushInput();
 
   // Turn filament on
-  RGA_SERIAL.write("FL1\r");
-  while (RGA_SERIAL.available() < 1)
+  rga.write("FL1\r");
+  while (rga.available() < 1)
   {
     delay(1000);
     Serial.println("Waiting for FL status byte");
   }
-  RGA_SERIAL.readBytes(RGA, 3);
+  rga.readBytes(rgaStatusBytes, 3);
 
   Serial.println("FL on, Clearing electrometer");
 
   // Calibrate electrometer
-  RGA_SERIAL.write("CL\r");
+  rga.write("CL\r");
   Serial.print("Waiting for CL status byte");
-  while (RGA_SERIAL.available() < 1)
+  while (rga.available() < 1)
   {
     delay(1000);
     Serial.print(".");
   }
   Serial.println();
-  RGA_SERIAL.readBytes(RGA, 3);
+  rga.readBytes(rgaStatusBytes, 3);
 
   // Calibrate all
-  RGA_SERIAL.write("CA\r");
-  while (RGA_SERIAL.available() < 1)
+  rga.write("CA\r");
+  while (rga.available() < 1)
   {
     delay(1000);
   }
-  RGA_SERIAL.readBytes(RGA, 3);
+  rga.readBytes(rgaStatusBytes, 3);
 
   Serial.println("Electrometer cleared, setting noise floor");
 
   // Set noise floor
-  setNF(NOISE_FLOOR);
+  rga.setNoiseFloor(NOISE_FLOOR);
   delay(1000);
 
   Serial.println("Noise floor set, zeroing electrometer");
 
   // zero electrometer
-  RGA_SERIAL.write("CA\r");
+  rga.write("CA\r");
   delay(25);
-  while (RGA_SERIAL.available() < 1)
+  while (rga.available() < 1)
   {
     delay(1000);
     Serial.println("Waiting for CA status byte");
   }
-  RGA_SERIAL.readBytes(RGA, 3);
+  rga.readBytes(rgaStatusBytes, 3);
 
   Serial.println("RGA ready!");
 
@@ -735,8 +734,8 @@ void StatusMsg(int M) {
     Udp.print(turboStatus.pumpBottomTemp);
     Udp.print(",");
     Udp.print(turboStatus.motorTemp);
-    rga_serial_flush();
-    float SRS = Read_Status_RGA(fil_chk, 1, 4);
+    rga.flushInput();
+    float SRS = rga.readStatus(fil_chk, 1, 4);
     Udp.print(",");
     Udp.print(SRS);
   }
@@ -768,8 +767,8 @@ void StatusMsg(int M) {
     Serial.print(turboStatus.pumpBottomTemp);
     Serial.print(",");
     Serial.print(turboStatus.motorTemp);
-    rga_serial_flush();
-    float SRS = Read_Status_RGA(fil_chk, 1, 4);
+    rga.flushInput();
+    float SRS = rga.readStatus(fil_chk, 1, 4);
     Serial.print(SRS);
   }
   else {
@@ -799,19 +798,19 @@ void printDigits(int digits) {
 
 void GEMS_Measurement(int TB_Spd2, int AMU_) {
   int current;
-  rga_serial_flush();
+  rga.flushInput();
   Serial.print("Measuring mass: ");
   Serial.println(AMU_);
-  RGA_ScanO(AMU_);
+  rga.startScan(AMU_);
 
   // Read ADV while waiting for response
   // TODO: do this as non-blocking read function in main loop
   elapsedMillis RGA_timer;
-  while (RGA_SERIAL.available() < 1 && RGA_timer < 3000) {
+  while (rga.available() < 1 && RGA_timer < 3000) {
   }
 
   //read scan and write to SD + UDP
-  current = RGA_ScanI();
+  current = rga.readScan();
 
   // TODO: populate data structure, output to file, etc. outside of function
 
@@ -878,14 +877,6 @@ int int_out(char aaa[50], int a, int b) {
   return num;
 }
 
-void rga_serial_flush()
-{
-  delay(100);
-  while (RGA_SERIAL.available()) {
-    RGA_SERIAL.read();
-  }
-}
-
 time_t getTeensy3Time()
 {
   return Teensy3Clock.get();
@@ -893,18 +884,18 @@ time_t getTeensy3Time()
 
 void clear_rga_buff()
 {
-  rga_serial_flush();
-  RGA_SERIAL.write(13);
-  RGA_SERIAL.write(13);
-  RGA_SERIAL.write("IN0\r");  //Initialize communication, clear buffers, check ECU hardware
-  while(RGA_SERIAL.available() < 1)
+  rga.flushInput();
+  rga.write(13);
+  rga.write(13);
+  rga.write("IN0\r");  //Initialize communication, clear buffers, check ECU hardware
+  while(rga.available() < 1)
   {
     delay(100);
   }
   delay(100);
-  char RGA[4];
-  RGA_SERIAL.readBytes(RGA, 3);
-  rga_serial_flush();
+  char rgaBytes[4];
+  rga.readBytes(rgaBytes, 3);
+  rga.flushInput();
 }
 
 // Get the current time in ISO-8601 format
