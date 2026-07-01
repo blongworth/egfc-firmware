@@ -41,6 +41,7 @@ const byte NUM_AMUS = 11;
 char FileName[32];
 File dataFile;
 bool file_created = false;
+TurboPump turbo;
 
 #ifdef USE_ETHERNET
 // Set up ethernet
@@ -72,7 +73,7 @@ const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 void printLoopRate();
 void createNewDataFile();
 void GEMS_Start(int TB_Spd3);
-void turbo_start(int TB_Spd3);
+void startTurboOnly(int TB_Spd3);
 void GEMS_Stop();
 bool Wait_For_RGA_Status_Byte(unsigned long timeoutMs);
 bool Ensure_RGA_Filament_Off();
@@ -112,7 +113,7 @@ void setup() {
     Serial.println("RTC has set the system time");
   }
 
-  turboBegin();
+  turbo.begin();
 
   Serial.println("Initializing RGA...");
   rga_serial_flush();
@@ -281,7 +282,7 @@ void loop() {
 
    // if surface message !Z10 change status to start turbo
     if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '0') {
-      turbo_start(TB_Spd);
+      startTurboOnly(TB_Spd);
     }
     // if surface message !Z12 change status to start mass spec and ADV
     // Use if turbo already running and system pumped down
@@ -309,7 +310,7 @@ void loop() {
       TB_Spd = atoi(TB_Spdc);
       StatusMsg(11);
       Serial.println(TB_Spd);
-      turboSetSpeedHz(TB_Spd);
+      turbo.setSpeedHz(TB_Spd);
       StatusMsg(12);
       int c_s = 0;
       // wait for 5 min adjust speed
@@ -414,7 +415,7 @@ void loop() {
 
   // Start Filament if Turbo looks OK
   if (Status == 4) {
-    if (turboIsReady(TB_Spd)) {
+    if (turbo.isReady(TB_Spd)) {
       startRGA();
     } else {
       Serial.println("Turbo not ready!");
@@ -457,7 +458,7 @@ void loop() {
   }
   #endif
 
-  turboTask();
+  turbo.task();
 
   printLoopRate();
 }
@@ -509,15 +510,15 @@ void GEMS_Start(int TB_Spd3) {
 
   // Turbo Start
   Serial.println("Turbo Starting ...");
-  turboSetSpeedHz(TB_Spd3);
+  turbo.setSpeedHz(TB_Spd3);
     Serial.println("StartTurbo");
-  turboStart();
+  turbo.start();
   int c_start = 0;
   // wait for 5 min startup
   while (c_start < 300) {
     digitalWrite(LED_PIN, HIGH);
     StatusMsg(3);
-    Turbo = turboIsReady(TB_Spd3);
+    Turbo = turbo.isReady(TB_Spd3);
     delay(500);
     c_start = c_start + 1;
     digitalWrite(LED_PIN, LOW);
@@ -525,7 +526,7 @@ void GEMS_Start(int TB_Spd3) {
   }
   StatusMsg(3);
   delay(1000);
-  int d = turboIsReady(TB_Spd3);
+  int d = turbo.isReady(TB_Spd3);
   Serial.print("Turbo check final:");
   Serial.println(d);
 
@@ -539,7 +540,7 @@ void GEMS_Start(int TB_Spd3) {
   }
 }
 
-void turbo_start(int TB_Spd3) {
+void startTurboOnly(int TB_Spd3) {
   StatusMsg(1);
 
   digitalWrite(LED_PIN, HIGH);
@@ -548,16 +549,16 @@ void turbo_start(int TB_Spd3) {
 
   // Turbo Start
   Serial.println("Turbo Starting ...");
-  turboSetSpeedHz(TB_Spd3);
+  turbo.setSpeedHz(TB_Spd3);
     Serial.println("StartTurbo");
-  turboStart();
+  turbo.start();
   int c_start = 0;
   // wait for 5 min startup
   // should do this as a timer-polled state to avoid blocking
   while (c_start < 300) {
     digitalWrite(LED_PIN, HIGH);
     StatusMsg(3);
-    Turbo = turboIsReady(TB_Spd3);
+    Turbo = turbo.isReady(TB_Spd3);
     delay(500);
     c_start = c_start + 1;
     digitalWrite(LED_PIN, LOW);
@@ -565,7 +566,7 @@ void turbo_start(int TB_Spd3) {
   }
   StatusMsg(3);
   delay(1000);
-  int d = turboIsReady(TB_Spd3);
+  int d = turbo.isReady(TB_Spd3);
   Serial.print("Turbo check final:");
   Serial.println(d);
 }
@@ -588,11 +589,11 @@ void GEMS_Stop() {
 
   Serial.println("Stop turbopump");
 
-  turboStop();
+  turbo.stop();
 
   int TurboSpeed = 999;
   while (TurboSpeed > 1) {
-    TurboBasicStatus turboStatus = turboReadBasicStatus();
+    TurboBasicStatus turboStatus = turbo.readBasicStatus();
     TurboSpeed = turboStatus.actualSpeedHz;
     digitalWrite(LED_PIN, HIGH);
     delay(1000);    
@@ -720,7 +721,7 @@ void StatusMsg(int M) {
   Udp.print(iso8601Time);
   Udp.print(",");
   if (M == 3) {
-    TurboDetailedStatus turboStatus = turboReadDetailedStatus();
+    TurboDetailedStatus turboStatus = turbo.readDetailedStatus();
     Udp.print(turboStatus.error);
     Udp.print(",");
     Udp.print(turboStatus.actualSpeedHz);
@@ -753,7 +754,7 @@ void StatusMsg(int M) {
   Serial.print(iso8601Time);
   Serial.print(",");
   if (M == 3) {
-    TurboDetailedStatus turboStatus = turboReadDetailedStatus();
+    TurboDetailedStatus turboStatus = turbo.readDetailedStatus();
     Serial.print(turboStatus.error);
     Serial.print(",");
     Serial.print(turboStatus.actualSpeedHz);
@@ -843,7 +844,7 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
   const int N_BAD_CHECKS = 2;
   const unsigned long BAD_CHECK_TIME = 20000; // 20 seconds in milliseconds
 
-  if (!turboIsReady(TB_Spd2)) {
+  if (!turbo.isReady(TB_Spd2)) {
     StatusMsg(3); // Update status to indicate turbo problem
     Serial.println("Turbo problem detected");
     if (turbo_bad_timer > BAD_CHECK_TIME) {
