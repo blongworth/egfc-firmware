@@ -70,6 +70,7 @@ enum class TurboStartupState {
   SetSpeed,
   StartCommand,
   WaitReady,
+  WaitReadyDwell,
   Ready,
   Failed
 };
@@ -81,6 +82,8 @@ int turboStartupTargetSpeed = 1200;
 bool turboStartupStartRgaWhenReady = false;
 const unsigned long TURBO_STARTUP_TIMEOUT_MS = 300000;
 const unsigned long TURBO_STARTUP_POLL_MS = 1000;
+const unsigned long TURBO_READY_BEFORE_RGA_MS = 300000;
+elapsedMillis turboReadyTimer;
 
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 
@@ -525,6 +528,7 @@ void beginTurboStartup(int speedHz, bool startRgaWhenReady) {
   turboStartupState = TurboStartupState::SetSpeed;
   turboStartupTimer = 0;
   turboStartupPollTimer = 0;
+  turboReadyTimer = 0;
 }
 
 void updateTurboStartup() {
@@ -552,12 +556,38 @@ void updateTurboStartup() {
         StatusMsg(3);
         Turbo = turbo.isReady(turboStartupTargetSpeed);
         if (Turbo == 1) {
-          turboStartupState = TurboStartupState::Ready;
+          if (turboStartupStartRgaWhenReady && TURBO_READY_BEFORE_RGA_MS > 0) {
+            Serial.println("Turbo ready, waiting before RGA start");
+            turboReadyTimer = 0;
+            turboStartupState = TurboStartupState::WaitReadyDwell;
+          } else {
+            turboStartupState = TurboStartupState::Ready;
+          }
         }
       }
 
       if (turboStartupTimer >= TURBO_STARTUP_TIMEOUT_MS) {
         turboStartupState = TurboStartupState::Failed;
+      }
+      return;
+
+    case TurboStartupState::WaitReadyDwell:
+      if (turboStartupPollTimer >= TURBO_STARTUP_POLL_MS) {
+        turboStartupPollTimer = 0;
+        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+        StatusMsg(3);
+        Turbo = turbo.isReady(turboStartupTargetSpeed);
+        if (Turbo != 1) {
+          Serial.println("Turbo readiness lost, restarting ready timer");
+          turboStartupTimer = 0;
+          turboReadyTimer = 0;
+          turboStartupState = TurboStartupState::WaitReady;
+          return;
+        }
+      }
+
+      if (turboReadyTimer >= TURBO_READY_BEFORE_RGA_MS) {
+        turboStartupState = TurboStartupState::Ready;
       }
       return;
 
