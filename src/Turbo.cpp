@@ -4,14 +4,9 @@
 
 #include "Turbo.h"
 
-// External declarations for variables defined in main.cpp
-extern char turbo_message[30];
-extern int Status_Turbo_B[3];
-extern const int TURBO_BUFFER_SIZE;
-extern int rlen;
-
 #define USBBAUD 9600
 #define LED_PIN 13
+const int TURBO_BUFFER_SIZE = 30;
 uint32_t baud = USBBAUD;
 uint32_t format = USBHOST_SERIAL_8N1;
 USBHost myusb;
@@ -25,6 +20,9 @@ USBDriver *drivers[] = {&hub1, &hub2, &hid1, &hid2, &hid3, &userial};
 #define CNT_DEVICES (sizeof(drivers)/sizeof(drivers[0]))
 const char * driver_names[CNT_DEVICES] = {"Hub1", "Hub2",  "HID1", "HID2", "HID3", "USERIAL1" };
 bool driver_active[CNT_DEVICES] = {false, false, false, false};
+char turbo_message[TURBO_BUFFER_SIZE];
+
+static int Read_Status_Turbo(char *x, unsigned int a, unsigned int b);
 
 
 void  startUSB(){
@@ -41,7 +39,7 @@ void startTurbo()
   char VarT[BUFFER_SIZE_T];
   char VarTOut[6];
   digitalWrite(LED_PIN, HIGH);
-  rlen = userial.readBytesUntil(13, VarT, BUFFER_SIZE_T);
+  userial.readBytesUntil(13, VarT, BUFFER_SIZE_T);
   for (int i = 10; i < 16; ++i)
     VarTOut[i - 10] = VarT[i];
   // String s = String(VarTOut);
@@ -51,7 +49,7 @@ void startTurbo()
   // 001 = turbo id, 10 = action:send, 010 = Param Pumping station
   delay(250);
   // for loop from a to b
-  rlen = userial.readBytesUntil(13, VarT, BUFFER_SIZE_T);
+  userial.readBytesUntil(13, VarT, BUFFER_SIZE_T);
   for (int i = 10; i < 16; ++i)
     VarTOut[i - 10] = VarT[i];
   // s = String(VarTOut);
@@ -150,7 +148,7 @@ void Turbo_Change_Speed(int TB_Spd4)
   Serial.println("Rotation speed updated");
 }
 
-int Read_Status_Turbo (char *x, unsigned int a, unsigned int b) {
+static int Read_Status_Turbo (char *x, unsigned int a, unsigned int b) {
   userial.write(x);
   delay(50);
   char Var1[TURBO_BUFFER_SIZE];
@@ -187,70 +185,77 @@ int Read_Status_Turbo (char *x, unsigned int a, unsigned int b) {
 //   return VarNum; // return the value
 // }
 
-void Get_Status_Turbo_A(int ST[]) {
+TurboDetailedStatus Turbo_Read_Detailed_Status() {
+  TurboDetailedStatus status;
+
   // ErrorCode
   char err_req[17] = "0010030302=?101\r";
-  ST[0] = Read_Status_Turbo(err_req, 10, 16);
+  status.error = Read_Status_Turbo(err_req, 10, 16);
   //  SetRotSpd
   //  ST[1] = Read_Status_Turbo("0010030802=?106\r", 10, 16);
   //  ActualSpd
   char spd_req[17] = "0010030902=?107\r";
-  ST[2] = Read_Status_Turbo(spd_req, 10, 16);
+  status.actualSpeedHz = Read_Status_Turbo(spd_req, 10, 16);
   //  NominalSpd
   //  ST[3] = Read_Status_Turbo("0010031502=?104\r", 10, 16);
   //  DrvPower
   char pwr_req[17] = "0010031602=?105\r";
-  ST[4] = Read_Status_Turbo(pwr_req, 10, 16);
+  status.drivePowerW = Read_Status_Turbo(pwr_req, 10, 16);
   //  //  DrvCurrent
   //  ST[5] = Read_Status_Turbo("0010031002=?099\r", 10, 16);
   //  DrvVoltage
   char v_req[17] = "0010031302=?102\r";
-  ST[6] = Read_Status_Turbo(v_req, 10, 16);
+  status.driveVoltage = Read_Status_Turbo(v_req, 10, 16);
   //  //  TempElec
   char etemp_req[17] = "0010032602=?106\r";
-  ST[7] = Read_Status_Turbo(etemp_req, 10, 16);
+  status.electronicsTemp = Read_Status_Turbo(etemp_req, 10, 16);
   //  TempPmpBot
   char ptemp_req[17] = "0010033002=?101\r";
-  ST[8] = Read_Status_Turbo(ptemp_req, 10, 16);
+  status.pumpBottomTemp = Read_Status_Turbo(ptemp_req, 10, 16);
   //  //  TempMotor
   char mtemp_req[17] = "0010034602=?108\r";
-  ST[9] = Read_Status_Turbo(mtemp_req, 10, 16);
+  status.motorTemp = Read_Status_Turbo(mtemp_req, 10, 16);
+  status.lastRawMessage = turbo_message;
+  return status;
 }
 
 
-void Get_Status_Turbo_B(int ST[]) {
+TurboBasicStatus Turbo_Read_Basic_Status() {
+  TurboBasicStatus status;
+
   // ErrorCode
   char err_req[17] = "0010030302=?101\r";
-  ST[0] = Read_Status_Turbo(err_req, 10, 16);
+  status.error = Read_Status_Turbo(err_req, 10, 16);
   //  ActualSpd
   char spd_req[17] = "0010030902=?107\r";
-  ST[1] = Read_Status_Turbo(spd_req, 10, 16);
+  status.actualSpeedHz = Read_Status_Turbo(spd_req, 10, 16);
   //  DrvPower
   char pwr_req[17] = "0010031602=?105\r";
-  ST[2] = Read_Status_Turbo(pwr_req, 10, 16);
+  status.drivePowerW = Read_Status_Turbo(pwr_req, 10, 16);
+  return status;
 }
 
 int Turbo_Check(int TB_Spd1) {
   int m;
   m=TB_Spd1-50;
-  Get_Status_Turbo_B(Status_Turbo_B);
+  TurboBasicStatus status = Turbo_Read_Basic_Status();
   
   Serial.print("Error:");
-  Serial.print(Status_Turbo_B[0]);
+  Serial.print(status.error);
   Serial.println(" ");
 
   Serial.print("NominalSpd (");
   Serial.print(m);
   Serial.print("Hz):");
-  Serial.print(Status_Turbo_B[1]);
+  Serial.print(status.actualSpeedHz);
   Serial.println("Hz");
 
   Serial.print("DrvPower:");
-  Serial.print(Status_Turbo_B[2]);
+  Serial.print(status.drivePowerW);
   Serial.println("W");
 
   int T = 0;
-  if (Status_Turbo_B[0] == 0 && Status_Turbo_B[1] > m && Status_Turbo_B[2] < 15) {
+  if (status.error == 0 && status.actualSpeedHz > m && status.drivePowerW < 15) {
     T = 1;
 //    Serial.println("Set turbo check value to one");
   };

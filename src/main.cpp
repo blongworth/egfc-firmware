@@ -59,18 +59,13 @@ char fil_chk[5] = "FL?\r";
 const int BUFFER_SIZE = 100;
 char SrfMsg[BUFFER_SIZE];
 char RGA[4];
-int rlen;
 int Status;
 int Turbo;
 int OnOff=0;
-int Status_Turbo[10];
-int Status_Turbo_B[3];
 int TB_Spd = 1200;
 unsigned long Timer;
 int turbo_bad_ctr = 0;
 elapsedMillis turbo_bad_timer;
-extern const int TURBO_BUFFER_SIZE = 30;
-char turbo_message[30];
 
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 
@@ -597,8 +592,8 @@ void GEMS_Stop() {
 
   int TurboSpeed = 999;
   while (TurboSpeed > 1) {
-    Get_Status_Turbo_B(Status_Turbo_B);
-    TurboSpeed = Status_Turbo_B[1];
+    TurboBasicStatus turboStatus = Turbo_Read_Basic_Status();
+    TurboSpeed = turboStatus.actualSpeedHz;
     digitalWrite(LED_PIN, HIGH);
     delay(1000);    
     digitalWrite(LED_PIN, LOW);
@@ -725,20 +720,20 @@ void StatusMsg(int M) {
   Udp.print(iso8601Time);
   Udp.print(",");
   if (M == 3) {
-    Get_Status_Turbo_A(Status_Turbo);
-    Udp.print(turbo_message);
+    TurboDetailedStatus turboStatus = Turbo_Read_Detailed_Status();
+    Udp.print(turboStatus.lastRawMessage);
     Udp.print(",");
-    Udp.print(Status_Turbo[2]);
+    Udp.print(turboStatus.actualSpeedHz);
     Udp.print(",");
-    Udp.print(Status_Turbo[4]);
+    Udp.print(turboStatus.drivePowerW);
     Udp.print(",");
-    Udp.print(Status_Turbo[6]);
+    Udp.print(turboStatus.driveVoltage);
     Udp.print(",");
-    Udp.print(Status_Turbo[7]);
+    Udp.print(turboStatus.electronicsTemp);
     Udp.print(",");
-    Udp.print(Status_Turbo[8]);
+    Udp.print(turboStatus.pumpBottomTemp);
     Udp.print(",");
-    Udp.print(Status_Turbo[9]);
+    Udp.print(turboStatus.motorTemp);
     rga_serial_flush();
     float SRS = Read_Status_RGA(fil_chk, 1, 4);
     Udp.print(",");
@@ -758,20 +753,20 @@ void StatusMsg(int M) {
   Serial.print(iso8601Time);
   Serial.print(",");
   if (M == 3) {
-    Get_Status_Turbo_A(Status_Turbo);
-    Serial.print(Status_Turbo[0]);
+    TurboDetailedStatus turboStatus = Turbo_Read_Detailed_Status();
+    Serial.print(turboStatus.error);
     Serial.print(",");
-    Serial.print(Status_Turbo[2]);
+    Serial.print(turboStatus.actualSpeedHz);
     Serial.print(",");
-    Serial.print(Status_Turbo[4]);
+    Serial.print(turboStatus.drivePowerW);
     Serial.print(",");
-    Serial.print(Status_Turbo[6]);
+    Serial.print(turboStatus.driveVoltage);
     Serial.print(",");
-    Serial.print(Status_Turbo[7]);
+    Serial.print(turboStatus.electronicsTemp);
     Serial.print(",");
-    Serial.print(Status_Turbo[8]);
+    Serial.print(turboStatus.pumpBottomTemp);
     Serial.print(",");
-    Serial.print(Status_Turbo[9]);
+    Serial.print(turboStatus.motorTemp);
     rga_serial_flush();
     float SRS = Read_Status_RGA(fil_chk, 1, 4);
     Serial.print(SRS);

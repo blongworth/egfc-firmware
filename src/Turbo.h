@@ -1,11 +1,27 @@
 #pragma once
 
+struct TurboBasicStatus {
+  int error;
+  int actualSpeedHz;
+  int drivePowerW;
+};
+
+struct TurboDetailedStatus {
+  int error;
+  int actualSpeedHz;
+  int drivePowerW;
+  int driveVoltage;
+  int electronicsTemp;
+  int pumpBottomTemp;
+  int motorTemp;
+  const char *lastRawMessage;
+};
+
 void startUSB();
 void startTurbo();
 void stopTurbo();
 void USB_serial_stuff();
 void Turbo_Change_Speed(int TB_Spd4);
-int Read_Status_Turbo(char *x, unsigned int a, unsigned int b);
-void Get_Status_Turbo_A(int ST[]);
-void Get_Status_Turbo_B(int ST[]);
+TurboDetailedStatus Turbo_Read_Detailed_Status();
+TurboBasicStatus Turbo_Read_Basic_Status();
 int Turbo_Check(int TB_Spd1);
