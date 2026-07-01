@@ -65,12 +65,31 @@ unsigned long Timer;
 int turbo_bad_ctr = 0;
 elapsedMillis turbo_bad_timer;
 
+enum class TurboStartupState {
+  Idle,
+  SetSpeed,
+  StartCommand,
+  WaitReady,
+  Ready,
+  Failed
+};
+
+TurboStartupState turboStartupState = TurboStartupState::Idle;
+elapsedMillis turboStartupTimer;
+elapsedMillis turboStartupPollTimer;
+int turboStartupTargetSpeed = 1200;
+bool turboStartupStartRgaWhenReady = false;
+const unsigned long TURBO_STARTUP_TIMEOUT_MS = 300000;
+const unsigned long TURBO_STARTUP_POLL_MS = 1000;
+
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 
 void printLoopRate();
 void createNewDataFile();
 void GEMS_Start(int TB_Spd3);
 void startTurboOnly(int TB_Spd3);
+void beginTurboStartup(int speedHz, bool startRgaWhenReady);
+void updateTurboStartup();
 void GEMS_Stop();
 void startRGA();
 void StatusMsg(int M);
@@ -329,7 +348,7 @@ void loop() {
   }
 
   // Start Turbo Mass Spec and ADV
-  if (Status == 1) {
+  if (Status == 1 && turboStartupState == TurboStartupState::Idle) {
     OnOff=1;
     GEMS_Start(TB_Spd);
     Udp.beginPacket(destinationIP, destinationPort);
@@ -364,7 +383,7 @@ void loop() {
   }
 
   // Start Turbo Mass Spec
-  if (Status == 1) {
+  if (Status == 1 && turboStartupState == TurboStartupState::Idle) {
     OnOff=1;
     GEMS_Start(TB_Spd);
     Serial.print("?");
@@ -431,6 +450,8 @@ void loop() {
   }
   #endif
 
+  updateTurboStartup();
+
   turbo.task();
 
   printLoopRate();
@@ -483,34 +504,7 @@ void GEMS_Start(int TB_Spd3) {
 
   // Turbo Start
   Serial.println("Turbo Starting ...");
-  turbo.setSpeedHz(TB_Spd3);
-    Serial.println("StartTurbo");
-  turbo.start();
-  int c_start = 0;
-  // wait for 5 min startup
-  while (c_start < 300) {
-    digitalWrite(LED_PIN, HIGH);
-    StatusMsg(3);
-    Turbo = turbo.isReady(TB_Spd3);
-    delay(500);
-    c_start = c_start + 1;
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
-  }
-  StatusMsg(3);
-  delay(1000);
-  int d = turbo.isReady(TB_Spd3);
-  Serial.print("Turbo check final:");
-  Serial.println(d);
-
-  // If turbo running, start RGA
-  if (d == 1) {
-    startRGA();
-  } else {
-    Serial.println("Turbo failed to start, stopping turbo");
-    StatusMsg(5);
-    Status = 3;
-  }
+  beginTurboStartup(TB_Spd3, true);
 }
 
 void startTurboOnly(int TB_Spd3) {
@@ -522,29 +516,77 @@ void startTurboOnly(int TB_Spd3) {
 
   // Turbo Start
   Serial.println("Turbo Starting ...");
-  turbo.setSpeedHz(TB_Spd3);
-    Serial.println("StartTurbo");
-  turbo.start();
-  int c_start = 0;
-  // wait for 5 min startup
-  // should do this as a timer-polled state to avoid blocking
-  while (c_start < 300) {
-    digitalWrite(LED_PIN, HIGH);
-    StatusMsg(3);
-    Turbo = turbo.isReady(TB_Spd3);
-    delay(500);
-    c_start = c_start + 1;
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
+  beginTurboStartup(TB_Spd3, false);
+}
+
+void beginTurboStartup(int speedHz, bool startRgaWhenReady) {
+  turboStartupTargetSpeed = speedHz;
+  turboStartupStartRgaWhenReady = startRgaWhenReady;
+  turboStartupState = TurboStartupState::SetSpeed;
+  turboStartupTimer = 0;
+  turboStartupPollTimer = 0;
+}
+
+void updateTurboStartup() {
+  switch (turboStartupState) {
+    case TurboStartupState::Idle:
+      return;
+
+    case TurboStartupState::SetSpeed:
+      turbo.setSpeedHz(turboStartupTargetSpeed);
+      turboStartupState = TurboStartupState::StartCommand;
+      return;
+
+    case TurboStartupState::StartCommand:
+      Serial.println("StartTurbo");
+      turbo.start();
+      turboStartupTimer = 0;
+      turboStartupPollTimer = 0;
+      turboStartupState = TurboStartupState::WaitReady;
+      return;
+
+    case TurboStartupState::WaitReady:
+      if (turboStartupPollTimer >= TURBO_STARTUP_POLL_MS) {
+        turboStartupPollTimer = 0;
+        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+        StatusMsg(3);
+        Turbo = turbo.isReady(turboStartupTargetSpeed);
+        if (Turbo == 1) {
+          turboStartupState = TurboStartupState::Ready;
+        }
+      }
+
+      if (turboStartupTimer >= TURBO_STARTUP_TIMEOUT_MS) {
+        turboStartupState = TurboStartupState::Failed;
+      }
+      return;
+
+    case TurboStartupState::Ready:
+      StatusMsg(3);
+      Serial.print("Turbo check final:");
+      Serial.println(1);
+      turboStartupState = TurboStartupState::Idle;
+      if (turboStartupStartRgaWhenReady) {
+        startRGA();
+      }
+      return;
+
+    case TurboStartupState::Failed:
+      StatusMsg(3);
+      Serial.print("Turbo check final:");
+      Serial.println(0);
+      if (turboStartupStartRgaWhenReady) {
+        Serial.println("Turbo failed to start, stopping turbo");
+        StatusMsg(5);
+        Status = 3;
+      }
+      turboStartupState = TurboStartupState::Idle;
+      return;
   }
-  StatusMsg(3);
-  delay(1000);
-  int d = turbo.isReady(TB_Spd3);
-  Serial.print("Turbo check final:");
-  Serial.println(d);
 }
 
 void GEMS_Stop() {
+  turboStartupState = TurboStartupState::Idle;
   StatusMsg(6);
 
   if (!rga.ensureFilamentOff(10, 5000)) {
