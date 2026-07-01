@@ -65,6 +65,19 @@ unsigned long Timer;
 int turbo_bad_ctr = 0;
 elapsedMillis turbo_bad_timer;
 
+enum class SystemState {
+  Off,
+  TurboStarting,
+  TurboReady,
+  RgaStarting,
+  RgaReady,
+  Acquiring,
+  Stopping,
+  Error
+};
+
+SystemState systemState = SystemState::Off;
+
 enum class TurboStartupState {
   Idle,
   SetSpeed,
@@ -80,6 +93,7 @@ elapsedMillis turboStartupTimer;
 elapsedMillis turboStartupPollTimer;
 int turboStartupTargetSpeed = 1200;
 bool turboStartupStartRgaWhenReady = false;
+bool turboStartupAcquireWhenRgaReady = false;
 const unsigned long TURBO_STARTUP_TIMEOUT_MS = 300000;
 const unsigned long TURBO_STARTUP_POLL_MS = 1000;
 const unsigned long TURBO_READY_BEFORE_RGA_MS = 300000;
@@ -91,11 +105,22 @@ void printLoopRate();
 void createNewDataFile();
 void GEMS_Start(int TB_Spd3);
 void startTurboOnly(int TB_Spd3);
-void beginTurboStartup(int speedHz, bool startRgaWhenReady);
+void beginTurboStartup(int speedHz, bool startRgaWhenReady, bool acquireWhenRgaReady);
 void updateTurboStartup();
-void GEMS_Stop();
-void startRGA();
+bool GEMS_Stop();
+void startRGA(bool startAcquisition);
 void StatusMsg(int M);
+void handleCommand(char *command);
+void sendOk(const char *command);
+void sendErr(const char *command, const char *message);
+void sendStatus();
+void sendResponse(const char *response);
+const char *systemStateName(SystemState state);
+void setSystemState(SystemState state);
+void stopAcquisition();
+bool stopRgaOnly();
+void stopTurboOnly();
+bool isCommand(const char *command, const char *modern, const char *legacy);
 void printDigits(int digits);
 void GEMS_Measurement(int TB_Spd2, int AMU_);
 int int_out(char aaa[50], int a, int b);
@@ -208,6 +233,7 @@ void setup() {
   // tell the surface the system is off
   Status=0;
   OnOff=0;
+  systemState = SystemState::Off;
 
 #ifdef USE_ETHERNET
   Udp.beginPacket(destinationIP, destinationPort);
@@ -233,185 +259,39 @@ void loop() {
 #endif
 
   if (packetSize) {
-    //int rlen
 #ifdef USE_ETHERNET
-    Udp.readBytesUntil('\r', SrfMsg, BUFFER_SIZE);
+    size_t msgLen = Udp.readBytesUntil('\r', SrfMsg, BUFFER_SIZE - 1);
 #else
-    Serial.readBytesUntil('\r', SrfMsg, BUFFER_SIZE);
+    size_t msgLen = Serial.readBytesUntil('\r', SrfMsg, BUFFER_SIZE - 1);
 #endif
-
-    // if serial message !ZFS: Filament Stop
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == 'F' && SrfMsg[3] == 'S') {
-      Serial.println("Filament off");
-      while (rga.filamentStatus() != 0) {
-        digitalWrite(LED_PIN, HIGH);
-        delay(500);
-        digitalWrite(LED_PIN, LOW);
-        delay(500);
-        rga.turnFilamentOff(0);
-        float FL = rga.filamentStatus();
-        Serial.print("FL?: ");
-            Serial.println(FL);
-      }
-    }
-
-    // if surface message !Z21 change status to turn off RGA filament
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '2' && SrfMsg[3] == '1') {
-      Status = 3;
-      OnOff = 0;
-    }
-
-    // if surface message !Z22 change status to stop mass spec and ADV
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '2' && SrfMsg[3] == '2') {
-      Status = 3;
-      OnOff = 0;
-    }
-
-    // if surface message !Z20 safely stop turbopump
-    // Stop acquisition first, verify RGA filament is off, then stop turbo.
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '2' && SrfMsg[3] == '0') {
-      Serial.println("Safe turbopump stop requested");
-      Status = 3;
-      OnOff = 0;
-    }
-
-   // if surface message !Z10 change status to start turbo
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '0') {
-      startTurboOnly(TB_Spd);
-    }
-    // if surface message !Z12 change status to start mass spec and ADV
-    // Use if turbo already running and system pumped down
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '2') {
-      Status = 4;
-      OnOff = 0;
-    }
-
-    // if surface message !Z11 change status to start mass spec and ADV
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'Z' && SrfMsg[2] == '1' && SrfMsg[3] == '1') {
-      Status = 1;
-      OnOff = 1;
-    }
-
-    // if surface message !RS change turbo speed
-    if (SrfMsg[0] == '!' && SrfMsg[1] == 'R' && SrfMsg[2] == 'S') {
-      Serial.println("change turbo speed loop");
-      char TB_Spdc[4];
-      StatusMsg(9);
-      TB_Spdc[0] = SrfMsg[3];
-      TB_Spdc[1] = SrfMsg[4];
-      TB_Spdc[2] = SrfMsg[5];
-      TB_Spdc[3] = SrfMsg[6];
-      StatusMsg(10);
-      TB_Spd = atoi(TB_Spdc);
-      StatusMsg(11);
-      Serial.println(TB_Spd);
-      turbo.setSpeedHz(TB_Spd);
-      StatusMsg(12);
-      int c_s = 0;
-      // wait for 5 min adjust speed
-      while (c_s < 80) {
-        StatusMsg(3);
-        delay(5000);
-        c_s = c_s + 1;
-      }
-    }
-
-#ifdef USE_ETHERNET
-    // if surface message T read time, OnOff
-    if (SrfMsg[0] == 'T') {
-      unsigned long unix_time = strtoul(SrfMsg + 1, NULL, 10);
-      // Check if time is valid (after 2025-01-01 and before uint32 max)
-      if (unix_time > 1735689600UL && unix_time < 4294967295UL) {
-        Teensy3Clock.set(unix_time);
-        setTime(unix_time);
-        Serial.print("Setting time to: ");
-        Serial.println(unix_time);
-      } else {
-        Serial.print("Invalid time received: ");
-        Serial.println(unix_time);
-        Serial.print("Surface message: ");
-        Serial.println(SrfMsg);
-      }
-      delay(100);
-      Udp.beginPacket(destinationIP, destinationPort);
-      Udp.print("?");
-      Udp.print(OnOff);
-      Udp.write(13);
-      Udp.endPacket();
-    }
-
-    // if message is ? then print status to serial monitor
-    if (SrfMsg[0] == '?') {
-      Udp.beginPacket(destinationIP, destinationPort);
-      Udp.print("?");
-      Udp.print(Status);
-      Udp.write(13);
-      Udp.endPacket();
-    }
+    SrfMsg[msgLen] = '\0';
+    handleCommand(SrfMsg);
   }
 
   // Start Turbo Mass Spec and ADV
   if (Status == 1 && turboStartupState == TurboStartupState::Idle) {
     OnOff=1;
     GEMS_Start(TB_Spd);
-    Udp.beginPacket(destinationIP, destinationPort);
-    Udp.print("?");
-    Udp.print(OnOff);
-    Udp.write(13);
-    Udp.endPacket();
+    sendStatus();
     digitalWrite(LED_PIN, HIGH);
   }
 
   // Stop Turbo Mass Spec and ADV
   if (Status == 3) {
     digitalWrite(LED_PIN, LOW);
-    GEMS_Stop();
-    Status = 0;
-    OnOff=0;
-    Udp.beginPacket(destinationIP, destinationPort);
-    Udp.print("?");
-    Udp.print(OnOff);
-    Udp.write(13);
-    Udp.endPacket();
-    digitalWrite(LED_PIN, LOW);
-  }
-#else
-
-    // if message is ? then print status to serial monitor
-    if (SrfMsg[0] == '?') {
-      Serial.print("?");
-      Serial.print(Status);
-      Serial.println();
+    if (GEMS_Stop()) {
+      setSystemState(SystemState::Off);
+    } else {
+      setSystemState(SystemState::Error);
     }
-  }
-
-  // Start Turbo Mass Spec
-  if (Status == 1 && turboStartupState == TurboStartupState::Idle) {
-    OnOff=1;
-    GEMS_Start(TB_Spd);
-    Serial.print("?");
-    Serial.print(OnOff);
-    Serial.println();
-    digitalWrite(LED_PIN, HIGH);
-  }
-
-  // Stop Turbo Mass Spec
-  if (Status == 3) {
-    digitalWrite(LED_PIN, LOW);
-    GEMS_Stop();
-    Status = 0;
-    OnOff=0;
-    Serial.print("?");
-    Serial.print(OnOff);
-    Serial.println();
+    sendStatus();
     digitalWrite(LED_PIN, LOW);
   }
-#endif
 
   // Start Filament if Turbo looks OK
   if (Status == 4) {
     if (turbo.isReady(TB_Spd)) {
-      startRGA();
+      startRGA(false);
     } else {
       Serial.println("Turbo not ready!");
       Status = 0;
@@ -433,7 +313,7 @@ void loop() {
   }
 
   // Measurement loop
-  if (Status == 2) {
+  if (systemState == SystemState::Acquiring) {
     rga.flushInput();
     Serial.println(TB_Spd);
     // measure AMUS in AMU array sequentially
@@ -448,7 +328,7 @@ void loop() {
   // Check valve timer and swap valve if needed
   // Log timestamp and position if changed
   #ifdef VALVE_CHANGE_TIME
-  if (Status == 2) {
+  if (systemState == SystemState::Acquiring) {
     changeValve();
   }
   #endif
@@ -497,6 +377,234 @@ void createNewDataFile()
   Serial.println(FileName);
 }
 
+void handleCommand(char *command) {
+  if (strcmp(command, "?") == 0) {
+    sendStatus();
+    return;
+  }
+
+  if (isCommand(command, "OFF", "!Z20") || strcmp(command, "!Z21") == 0 || strcmp(command, "!Z22") == 0) {
+    setSystemState(SystemState::Stopping);
+    Status = 3;
+    OnOff = 0;
+    sendOk("OFF");
+    return;
+  }
+
+  if (isCommand(command, "TON", "!Z10")) {
+    startTurboOnly(TB_Spd);
+    sendOk("TON");
+    return;
+  }
+
+  if (strcmp(command, "TOFF") == 0) {
+    stopAcquisition();
+    if (rga.filamentStatus() > 0.01) {
+      sendErr("TOFF", "RGA is on");
+      return;
+    }
+    stopTurboOnly();
+    sendOk("TOFF");
+    return;
+  }
+
+  if (isCommand(command, "RON", "!Z12")) {
+    if (!turbo.isReady(TB_Spd)) {
+      sendErr("RON", "Turbo not ready");
+      return;
+    }
+    startRGA(false);
+    sendOk("RON");
+    return;
+  }
+
+  if (isCommand(command, "ROFF", "!ZFS")) {
+    if (!stopRgaOnly()) {
+      sendErr("ROFF", "RGA filament did not confirm off");
+      return;
+    }
+    sendOk("ROFF");
+    return;
+  }
+
+  if (strcmp(command, "AON") == 0) {
+    if (systemState != SystemState::RgaReady && systemState != SystemState::Acquiring) {
+      sendErr("AON", "RGA not ready");
+      return;
+    }
+    setSystemState(SystemState::Acquiring);
+    sendOk("AON");
+    return;
+  }
+
+  if (strcmp(command, "AOFF") == 0) {
+    stopAcquisition();
+    sendOk("AOFF");
+    return;
+  }
+
+  if (isCommand(command, "RUN", "!Z11")) {
+    Status = 1;
+    OnOff = 1;
+    setSystemState(SystemState::TurboStarting);
+    sendOk("RUN");
+    return;
+  }
+
+  if (strcmp(command, "RDY") == 0) {
+    StatusMsg(1);
+    digitalWrite(LED_PIN, HIGH);
+    StatusMsg(2);
+    Serial.println("Turbo Starting ...");
+    setSystemState(SystemState::TurboStarting);
+    beginTurboStartup(TB_Spd, true, false);
+    sendOk("RDY");
+    return;
+  }
+
+  if (strncmp(command, "SPD", 3) == 0 || strncmp(command, "!RS", 3) == 0) {
+    const char *speedText = command + 3;
+    int newSpeed = atoi(speedText);
+    if (newSpeed <= 0) {
+      sendErr("SPD", "Invalid speed");
+      return;
+    }
+    TB_Spd = newSpeed;
+    turbo.setSpeedHz(TB_Spd);
+    sendOk("SPD");
+    return;
+  }
+
+  if (strncmp(command, "TIME", 4) == 0 || command[0] == 'T') {
+    const char *timeText = command[0] == 'T' && command[1] != 'I' ? command + 1 : command + 4;
+    unsigned long unix_time = strtoul(timeText, NULL, 10);
+    if (unix_time <= 1735689600UL || unix_time >= 4294967295UL) {
+      sendErr("TIME", "Invalid time");
+      return;
+    }
+    Teensy3Clock.set(unix_time);
+    setTime(unix_time);
+    sendOk("TIME");
+    return;
+  }
+
+  if (strcmp(command, "CLR") == 0) {
+    if (systemState == SystemState::Error) {
+      setSystemState(SystemState::Off);
+    }
+    sendOk("CLR");
+    return;
+  }
+
+  sendErr(command, "Unknown command");
+}
+
+void sendOk(const char *command) {
+  char response[40];
+  snprintf(response, sizeof(response), "OK,%s", command);
+  sendResponse(response);
+}
+
+void sendErr(const char *command, const char *message) {
+  char response[80];
+  snprintf(response, sizeof(response), "ERR,%s,%s", command, message);
+  sendResponse(response);
+}
+
+void sendStatus() {
+  bool turboReady = turbo.isReady(TB_Spd);
+  float filament = rga.filamentStatus();
+  char response[120];
+  snprintf(response, sizeof(response), "S,%s,SPD=%d,TURBO=%s,RGA=%s",
+           systemStateName(systemState),
+           TB_Spd,
+           turboReady ? "ready" : "not ready",
+           filament > 0.01 ? "on" : "off");
+  sendResponse(response);
+}
+
+void sendResponse(const char *response) {
+#ifdef USE_ETHERNET
+  Udp.beginPacket(destinationIP, destinationPort);
+  Udp.print(response);
+  Udp.write(13);
+  Udp.endPacket();
+#else
+  Serial.println(response);
+#endif
+}
+
+const char *systemStateName(SystemState state) {
+  switch (state) {
+    case SystemState::Off: return "Off";
+    case SystemState::TurboStarting: return "Turbo starting";
+    case SystemState::TurboReady: return "Turbo ready";
+    case SystemState::RgaStarting: return "RGA starting";
+    case SystemState::RgaReady: return "RGA ready";
+    case SystemState::Acquiring: return "Acquiring";
+    case SystemState::Stopping: return "Stopping";
+    case SystemState::Error: return "Error";
+  }
+  return "Error";
+}
+
+void setSystemState(SystemState state) {
+  systemState = state;
+  switch (state) {
+    case SystemState::Off:
+      Status = 0;
+      OnOff = 0;
+      break;
+    case SystemState::TurboStarting:
+    case SystemState::RgaStarting:
+      Status = 1;
+      break;
+    case SystemState::Acquiring:
+      Status = 2;
+      OnOff = 1;
+      break;
+    case SystemState::Stopping:
+      Status = 3;
+      OnOff = 0;
+      break;
+    case SystemState::Error:
+      Status = 5;
+      OnOff = 0;
+      break;
+    case SystemState::TurboReady:
+    case SystemState::RgaReady:
+      Status = 0;
+      OnOff = 0;
+      break;
+  }
+}
+
+void stopAcquisition() {
+  if (systemState == SystemState::Acquiring) {
+    setSystemState(SystemState::RgaReady);
+  }
+}
+
+bool stopRgaOnly() {
+  stopAcquisition();
+  if (!rga.ensureFilamentOff(10, 5000)) {
+    return false;
+  }
+  setSystemState(turbo.isReady(TB_Spd) ? SystemState::TurboReady : SystemState::Off);
+  return true;
+}
+
+void stopTurboOnly() {
+  stopAcquisition();
+  turboStartupState = TurboStartupState::Idle;
+  turbo.stop();
+  setSystemState(SystemState::Off);
+}
+
+bool isCommand(const char *command, const char *modern, const char *legacy) {
+  return strcmp(command, modern) == 0 || strcmp(command, legacy) == 0;
+}
+
 void GEMS_Start(int TB_Spd3) {
   StatusMsg(1);
 
@@ -507,7 +615,7 @@ void GEMS_Start(int TB_Spd3) {
 
   // Turbo Start
   Serial.println("Turbo Starting ...");
-  beginTurboStartup(TB_Spd3, true);
+  beginTurboStartup(TB_Spd3, true, true);
 }
 
 void startTurboOnly(int TB_Spd3) {
@@ -519,12 +627,14 @@ void startTurboOnly(int TB_Spd3) {
 
   // Turbo Start
   Serial.println("Turbo Starting ...");
-  beginTurboStartup(TB_Spd3, false);
+  beginTurboStartup(TB_Spd3, false, false);
 }
 
-void beginTurboStartup(int speedHz, bool startRgaWhenReady) {
+void beginTurboStartup(int speedHz, bool startRgaWhenReady, bool acquireWhenRgaReady) {
   turboStartupTargetSpeed = speedHz;
   turboStartupStartRgaWhenReady = startRgaWhenReady;
+  turboStartupAcquireWhenRgaReady = acquireWhenRgaReady;
+  setSystemState(SystemState::TurboStarting);
   turboStartupState = TurboStartupState::SetSpeed;
   turboStartupTimer = 0;
   turboStartupPollTimer = 0;
@@ -597,7 +707,9 @@ void updateTurboStartup() {
       Serial.println(1);
       turboStartupState = TurboStartupState::Idle;
       if (turboStartupStartRgaWhenReady) {
-        startRGA();
+        startRGA(turboStartupAcquireWhenRgaReady);
+      } else {
+        setSystemState(SystemState::TurboReady);
       }
       return;
 
@@ -608,21 +720,26 @@ void updateTurboStartup() {
       if (turboStartupStartRgaWhenReady) {
         Serial.println("Turbo failed to start, stopping turbo");
         StatusMsg(5);
+        setSystemState(SystemState::Error);
         Status = 3;
+      } else {
+        setSystemState(SystemState::Error);
       }
       turboStartupState = TurboStartupState::Idle;
       return;
   }
 }
 
-void GEMS_Stop() {
+bool GEMS_Stop() {
   turboStartupState = TurboStartupState::Idle;
+  stopAcquisition();
+  setSystemState(SystemState::Stopping);
   StatusMsg(6);
 
   if (!rga.ensureFilamentOff(10, 5000)) {
     Serial.println("RGA filament did not confirm off; turbo stop skipped");
     StatusMsg(5);
-    return;
+    return false;
   }
 
   Serial.println("Filament off");
@@ -647,11 +764,13 @@ void GEMS_Stop() {
   }
   StatusMsg(3);
   StatusMsg(9);
+  return true;
 }
 
-void startRGA()
+void startRGA(bool startAcquisition)
 {
   Serial.println("Turbo On, ready to turn on filament");
+  setSystemState(SystemState::RgaStarting);
   StatusMsg(4);
   StatusMsg(11);
 
@@ -663,7 +782,7 @@ void startRGA()
 
   Serial.println("RGA ready!");
 
-  Status = 2;
+  setSystemState(startAcquisition ? SystemState::Acquiring : SystemState::RgaReady);
   StatusMsg(12);
 }
 

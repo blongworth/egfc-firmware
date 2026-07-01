@@ -41,22 +41,47 @@ pio device monitor
 
 ## Surface Commands
 
-Commands are ASCII and terminated with carriage return (`\r`).
+Commands are short ASCII strings with no spaces and are terminated with carriage return (`\r`).
 
 | Command | Action |
 | --- | --- |
-| `?` | Query current status code. |
-| `T<unix>` | Set RTC/system time from Unix time. |
-| `!Z10` | Start turbopump only. |
-| `!Z11` | Start full system: turbopump, then RGA when turbo is ready. |
-| `!Z12` | Start RGA only if the turbopump is already ready. |
-| `!Z20` | Safely stop turbopump: stop acquisition, verify RGA filament is off, then stop turbo. |
-| `!Z21` | Stop system. |
-| `!Z22` | Stop system. |
-| `!ZFS` | Turn off RGA filament only. |
-| `!RS####` | Set turbopump target speed in Hz, for example `!RS1200`. |
+| `?` | Query current readable status. |
+| `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
+| `TON` | Start turbopump only. |
+| `TOFF` | Stop acquisition, then stop turbo only if RGA is off. |
+| `RON` | Start RGA only if the turbopump is ready. |
+| `ROFF` | Stop acquisition and turn off the RGA filament, leaving turbo running if ready. |
+| `AON` | Start acquisition if RGA is ready. |
+| `AOFF` | Stop acquisition and leave RGA ready. |
+| `RUN` | Full start: turbopump, ready dwell, RGA, then acquisition. |
+| `RDY` | Full start to RGA ready, without acquisition. |
+| `SPD####` | Set turbopump target speed in Hz, for example `SPD1200`. |
+| `TIME<unix>` | Set RTC/system time from Unix time. |
+| `CLR` | Clear error state. |
 
-Status query responses use `?N`. Data rows use:
+Legacy aliases are still accepted:
+
+| Alias | Command |
+| --- | --- |
+| `!Z10` | `TON` |
+| `!Z11` | `RUN` |
+| `!Z12` | `RON` |
+| `!Z20`, `!Z21`, `!Z22` | `OFF` |
+| `!ZFS` | `ROFF` |
+| `!RS####` | `SPD####` |
+| `T<unix>` | `TIME<unix>` |
+
+Status responses use:
+
+```text
+S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
+```
+
+Command acknowledgements use `OK,<command>`. Errors use `ERR,<command>,<message>`.
+
+Readable states are `Off`, `Turbo starting`, `Turbo ready`, `RGA starting`, `RGA ready`, `Acquiring`, `Stopping`, and `Error`.
+
+Data rows use:
 
 ```text
 R:<timestamp>,<mass>,<current>
@@ -68,7 +93,9 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 
 | Prefix | Format | Meaning |
 | --- | --- | --- |
-| `?` | `?N` | Current state/on-off response. |
+| `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
+| `OK,` | `OK,<command>` | Command accepted. |
+| `ERR,` | `ERR,<command>,<message>` | Command rejected. |
 | `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. |
 | `R:` | `R:<timestamp>,<mass>,<current>` | One RGA mass reading. Also written to the SD data file. |
 
@@ -91,11 +118,11 @@ Detailed status rows are sent when `StatusMsg(3)` runs. In serial builds, the pa
 1. Connect the RGA to `Serial4`, the turbopump controller to Teensy USB host serial, and insert the SD card.
 2. Power the system and open the serial monitor at `9600`.
 3. Confirm boot output shows RTC, RGA initialization, SD initialization, and `Surface ready`.
-4. If needed, set time with `T<unix>`.
-5. Start the full measurement sequence with `!Z11`.
+4. If needed, set time with `TIME<unix>` (`T<unix>` is still accepted).
+5. Start the full measurement sequence with `RUN` (`!Z11` is still accepted).
 6. The firmware sets turbopump speed, starts the pump, checks for readiness, turns on the RGA filament, then begins mass scans.
 7. During measurement, RGA rows are printed, written to SD, and sent over UDP if Ethernet is enabled.
-8. Stop with `!Z20`, `!Z21`, or `!Z22`. `!Z20` explicitly verifies the RGA filament is off before stopping the turbopump.
+8. Stop with `OFF` (`!Z20`, `!Z21`, and `!Z22` are still accepted). This stops acquisition, verifies the RGA filament is off, then stops the turbopump.
 
 ## Notes
 
