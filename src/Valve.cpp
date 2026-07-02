@@ -131,64 +131,64 @@ void DualValveController::update()
   disableDriverIfIdle();
 }
 
-void DualValveController::moveValve1ToA()
+void DualValveController::moveChamberToA()
 {
   enableDriver();
   valve1.moveToA();
   disableDriverIfIdle();
 }
 
-void DualValveController::moveValve1ToB()
+void DualValveController::moveChamberToB()
 {
   enableDriver();
   valve1.moveToB();
   disableDriverIfIdle();
 }
 
-void DualValveController::toggleValve1()
+void DualValveController::toggleChamber()
 {
   enableDriver();
   valve1.toggle();
   disableDriverIfIdle();
 }
 
-void DualValveController::moveValve2ToA()
+void DualValveController::moveFlushToA()
 {
   enableDriver();
   valve2.moveToA();
   disableDriverIfIdle();
 }
 
-void DualValveController::moveValve2ToB()
+void DualValveController::moveFlushToB()
 {
   enableDriver();
   valve2.moveToB();
   disableDriverIfIdle();
 }
 
-void DualValveController::toggleValve2()
+void DualValveController::toggleFlush()
 {
   enableDriver();
   valve2.toggle();
   disableDriverIfIdle();
 }
 
-ValvePosition DualValveController::valve1Position() const
+ValvePosition DualValveController::chamberPosition() const
 {
   return valve1.position();
 }
 
-ValvePosition DualValveController::valve2Position() const
+ValvePosition DualValveController::flushPosition() const
 {
   return valve2.position();
 }
 
-const char *DualValveController::valve1PositionName() const
+const char *DualValveController::chamberPositionName() const
 {
   return valve1.positionName();
 }
 
-const char *DualValveController::valve2PositionName() const
+const char *DualValveController::flushPositionName() const
 {
   return valve2.positionName();
 }

@@ -48,17 +48,17 @@ public:
   void begin();
   void update();
 
-  void moveValve1ToA();
-  void moveValve1ToB();
-  void toggleValve1();
-  void moveValve2ToA();
-  void moveValve2ToB();
-  void toggleValve2();
+  void moveChamberToA();
+  void moveChamberToB();
+  void toggleChamber();
+  void moveFlushToFlush();
+  void moveFlushToRecirculate();
+  void toggleFlush();
 
-  ValvePosition valve1Position() const;
-  ValvePosition valve2Position() const;
-  const char *valve1PositionName() const;
-  const char *valve2PositionName() const;
+  ValvePosition chamberPosition() const;
+  ValvePosition flushPosition() const;
+  const char *chamberPositionName() const;
+  const char *flushPositionName() const;
   bool isMoving() const;
   bool isDriverEnabled() const;
 
