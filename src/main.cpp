@@ -98,6 +98,7 @@ bool turboStartupAcquireWhenRgaReady = false;
 const unsigned long TURBO_STARTUP_TIMEOUT_MS = 300000;
 const unsigned long TURBO_STARTUP_POLL_MS = 1000;
 const unsigned long TURBO_READY_BEFORE_RGA_MS = 300000;
+const unsigned long RGA_STARTUP_TIMEOUT_MS = 60000;
 elapsedMillis turboReadyTimer;
 
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
@@ -837,7 +838,7 @@ bool startRGA(bool startAcquisition)
   StatusMsg(4);
   StatusMsg(11);
 
-  if (!rga.prepareForMeasurements(NOISE_FLOOR, 0)) {
+  if (!rga.prepareForMeasurements(NOISE_FLOOR, RGA_STARTUP_TIMEOUT_MS)) {
     Serial.println("RGA failed to start");
     setSystemState(SystemState::Error);
     return false;
