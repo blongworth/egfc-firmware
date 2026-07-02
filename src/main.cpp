@@ -57,9 +57,7 @@ const int chipSelect = BUILTIN_SDCARD;
 
 const int BUFFER_SIZE = 100;
 char SrfMsg[BUFFER_SIZE];
-int Status;
 int Turbo;
-int OnOff=0;
 int TB_Spd = 1200;
 unsigned long Timer;
 int turbo_bad_ctr = 0;
@@ -77,6 +75,8 @@ enum class SystemState {
 };
 
 SystemState systemState = SystemState::Off;
+bool fullStartRequested = false;
+bool stopRequested = false;
 
 enum class TurboStartupState {
   Idle,
@@ -111,6 +111,7 @@ bool GEMS_Stop();
 void startRGA(bool startAcquisition);
 void StatusMsg(int M);
 void handleCommand(char *command);
+void trimCommand(char *command);
 void sendOk(const char *command);
 void sendErr(const char *command, const char *message);
 void sendStatus();
@@ -230,17 +231,10 @@ void setup() {
   Serial.print("DataFile Name: ");
   Serial.println(FileName);
 
-  // tell the surface the system is off
-  Status=0;
-  OnOff=0;
   systemState = SystemState::Off;
 
 #ifdef USE_ETHERNET
-  Udp.beginPacket(destinationIP, destinationPort);
-  Udp.print("?");
-  Udp.print(OnOff);
-  Udp.write(13);
-  Udp.endPacket();
+  sendStatus();
 #endif
 
   Serial.println("Surface ready");
@@ -269,15 +263,16 @@ void loop() {
   }
 
   // Start Turbo Mass Spec and ADV
-  if (Status == 1 && turboStartupState == TurboStartupState::Idle) {
-    OnOff=1;
+  if (fullStartRequested) {
+    fullStartRequested = false;
     GEMS_Start(TB_Spd);
     sendStatus();
     digitalWrite(LED_PIN, HIGH);
   }
 
   // Stop Turbo Mass Spec and ADV
-  if (Status == 3) {
+  if (stopRequested) {
+    stopRequested = false;
     digitalWrite(LED_PIN, LOW);
     if (GEMS_Stop()) {
       setSystemState(SystemState::Off);
@@ -286,16 +281,6 @@ void loop() {
     }
     sendStatus();
     digitalWrite(LED_PIN, LOW);
-  }
-
-  // Start Filament if Turbo looks OK
-  if (Status == 4) {
-    if (turbo.isReady(TB_Spd)) {
-      startRGA(false);
-    } else {
-      Serial.println("Turbo not ready!");
-      Status = 0;
-    }
   }
 
   // cycle file every 4 hours
@@ -378,6 +363,11 @@ void createNewDataFile()
 }
 
 void handleCommand(char *command) {
+  trimCommand(command);
+  if (command[0] == '\0') {
+    return;
+  }
+
   if (strcmp(command, "?") == 0) {
     sendStatus();
     return;
@@ -385,8 +375,7 @@ void handleCommand(char *command) {
 
   if (isCommand(command, "OFF", "!Z20") || strcmp(command, "!Z21") == 0 || strcmp(command, "!Z22") == 0) {
     setSystemState(SystemState::Stopping);
-    Status = 3;
-    OnOff = 0;
+    stopRequested = true;
     sendOk("OFF");
     return;
   }
@@ -444,9 +433,8 @@ void handleCommand(char *command) {
   }
 
   if (isCommand(command, "RUN", "!Z11")) {
-    Status = 1;
-    OnOff = 1;
     setSystemState(SystemState::TurboStarting);
+    fullStartRequested = true;
     sendOk("RUN");
     return;
   }
@@ -497,6 +485,18 @@ void handleCommand(char *command) {
   }
 
   sendErr(command, "Unknown command");
+}
+
+void trimCommand(char *command) {
+  size_t len = strlen(command);
+  while (len > 0) {
+    char lastChar = command[len - 1];
+    if (lastChar != '\r' && lastChar != '\n' && lastChar != ' ' && lastChar != '\t') {
+      break;
+    }
+    command[len - 1] = '\0';
+    len--;
+  }
 }
 
 void sendOk(const char *command) {
@@ -550,33 +550,6 @@ const char *systemStateName(SystemState state) {
 
 void setSystemState(SystemState state) {
   systemState = state;
-  switch (state) {
-    case SystemState::Off:
-      Status = 0;
-      OnOff = 0;
-      break;
-    case SystemState::TurboStarting:
-    case SystemState::RgaStarting:
-      Status = 1;
-      break;
-    case SystemState::Acquiring:
-      Status = 2;
-      OnOff = 1;
-      break;
-    case SystemState::Stopping:
-      Status = 3;
-      OnOff = 0;
-      break;
-    case SystemState::Error:
-      Status = 5;
-      OnOff = 0;
-      break;
-    case SystemState::TurboReady:
-    case SystemState::RgaReady:
-      Status = 0;
-      OnOff = 0;
-      break;
-  }
 }
 
 void stopAcquisition() {
@@ -721,7 +694,7 @@ void updateTurboStartup() {
         Serial.println("Turbo failed to start, stopping turbo");
         StatusMsg(5);
         setSystemState(SystemState::Error);
-        Status = 3;
+        stopRequested = true;
       } else {
         setSystemState(SystemState::Error);
       }
@@ -758,7 +731,7 @@ bool GEMS_Stop() {
     TurboBasicStatus turboStatus = turbo.readBasicStatus();
     TurboSpeed = turboStatus.actualSpeedHz;
     digitalWrite(LED_PIN, HIGH);
-    delay(1000);    
+    delay(1000);
     digitalWrite(LED_PIN, LOW);
     delay(500);
   }
@@ -776,7 +749,7 @@ void startRGA(bool startAcquisition)
 
   if (!rga.prepareForMeasurements(NOISE_FLOOR, 0)) {
     Serial.println("RGA failed to start");
-    Status = 0;
+    setSystemState(SystemState::Error);
     return;
   }
 
@@ -925,7 +898,8 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
       if (turbo_bad_ctr > N_BAD_CHECKS) {
         Serial.println("Turbo problem stop GEMS!");
         StatusMsg(5);
-        Status = 3;
+        setSystemState(SystemState::Stopping);
+        stopRequested = true;
         // Reset for next time
         turbo_bad_ctr = 0;
         turbo_bad_timer = 0;
