@@ -102,3 +102,123 @@ void Valve::stopDrive()
   digitalWrite(pinA, LOW);
   digitalWrite(pinB, LOW);
 }
+
+DualValveController::DualValveController(uint8_t sleepPin,
+                                         uint8_t valve1PinA,
+                                         uint8_t valve1PinB,
+                                         uint8_t valve2PinA,
+                                         uint8_t valve2PinB,
+                                         unsigned long changeTimeMs)
+  : sleepPin(sleepPin),
+    valve1(valve1PinA, valve1PinB, changeTimeMs),
+    valve2(valve2PinA, valve2PinB, changeTimeMs)
+{
+}
+
+void DualValveController::begin()
+{
+  pinMode(sleepPin, OUTPUT);
+  digitalWrite(sleepPin, LOW);
+  driverEnabled = false;
+  valve1.begin();
+  valve2.begin();
+}
+
+void DualValveController::update()
+{
+  valve1.update();
+  valve2.update();
+  disableDriverIfIdle();
+}
+
+void DualValveController::moveValve1ToA()
+{
+  enableDriver();
+  valve1.moveToA();
+  disableDriverIfIdle();
+}
+
+void DualValveController::moveValve1ToB()
+{
+  enableDriver();
+  valve1.moveToB();
+  disableDriverIfIdle();
+}
+
+void DualValveController::toggleValve1()
+{
+  enableDriver();
+  valve1.toggle();
+  disableDriverIfIdle();
+}
+
+void DualValveController::moveValve2ToA()
+{
+  enableDriver();
+  valve2.moveToA();
+  disableDriverIfIdle();
+}
+
+void DualValveController::moveValve2ToB()
+{
+  enableDriver();
+  valve2.moveToB();
+  disableDriverIfIdle();
+}
+
+void DualValveController::toggleValve2()
+{
+  enableDriver();
+  valve2.toggle();
+  disableDriverIfIdle();
+}
+
+ValvePosition DualValveController::valve1Position() const
+{
+  return valve1.position();
+}
+
+ValvePosition DualValveController::valve2Position() const
+{
+  return valve2.position();
+}
+
+const char *DualValveController::valve1PositionName() const
+{
+  return valve1.positionName();
+}
+
+const char *DualValveController::valve2PositionName() const
+{
+  return valve2.positionName();
+}
+
+bool DualValveController::isMoving() const
+{
+  return valve1.isMoving() || valve2.isMoving();
+}
+
+bool DualValveController::isDriverEnabled() const
+{
+  return driverEnabled;
+}
+
+void DualValveController::enableDriver()
+{
+  if (driverEnabled) {
+    return;
+  }
+
+  digitalWrite(sleepPin, HIGH);
+  driverEnabled = true;
+}
+
+void DualValveController::disableDriverIfIdle()
+{
+  if (isMoving() || !driverEnabled) {
+    return;
+  }
+
+  digitalWrite(sleepPin, LOW);
+  driverEnabled = false;
+}

@@ -35,3 +35,39 @@ private:
   void driveToB();
   void stopDrive();
 };
+
+class DualValveController {
+public:
+  DualValveController(uint8_t sleepPin,
+                      uint8_t valve1PinA,
+                      uint8_t valve1PinB,
+                      uint8_t valve2PinA,
+                      uint8_t valve2PinB,
+                      unsigned long changeTimeMs);
+
+  void begin();
+  void update();
+
+  void moveValve1ToA();
+  void moveValve1ToB();
+  void toggleValve1();
+  void moveValve2ToA();
+  void moveValve2ToB();
+  void toggleValve2();
+
+  ValvePosition valve1Position() const;
+  ValvePosition valve2Position() const;
+  const char *valve1PositionName() const;
+  const char *valve2PositionName() const;
+  bool isMoving() const;
+  bool isDriverEnabled() const;
+
+private:
+  uint8_t sleepPin;
+  Valve valve1;
+  Valve valve2;
+  bool driverEnabled = false;
+
+  void enableDriver();
+  void disableDriverIfIdle();
+};
