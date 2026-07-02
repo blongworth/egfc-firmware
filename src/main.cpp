@@ -2,7 +2,6 @@
 
 // Build the teensy41_ethernet environment to enable ethernet communication.
 // #define USE_ETHERNET
-#define ENABLE_VALVE_TEST
 //
 #include <Arduino.h>
 #include <SPI.h>
@@ -50,21 +49,14 @@ const uint8_t CHAMBER_VALVE_PIN_B = 3;
 const uint8_t VALVE_SLEEP_PIN = 4;
 const uint8_t FLUSH_VALVE_PIN_A = 5;
 const uint8_t FLUSH_VALVE_PIN_B = 6;
+const unsigned long VALVE_TEST_MOVE_TIME_MS = 10000;
 
-#if defined(ENABLE_VALVE_TEST)
-#if !defined(VALVE_TEST_MOVE_TIME_MS)
-#define VALVE_TEST_MOVE_TIME_MS 10000
-#endif
-const unsigned long VALVE_TEST_INTERVAL_MS = 20000;
 DualValveController valves(VALVE_SLEEP_PIN,
                            CHAMBER_VALVE_PIN_A,
                            CHAMBER_VALVE_PIN_B,
                            FLUSH_VALVE_PIN_A,
                            FLUSH_VALVE_PIN_B,
                            VALVE_TEST_MOVE_TIME_MS);
-elapsedMillis valveTestTimer;
-bool valveTestMoveChamberNext = true;
-#endif
 
 #ifdef USE_ETHERNET
 // Set up ethernet
@@ -157,9 +149,6 @@ void GEMS_Measurement(int TB_Spd2, int AMU_);
 int int_out(char aaa[50], int a, int b);
 time_t getTeensy3Time();
 void getTimeISO8601(char *iso8601Time, size_t bufferSize);
-#if defined(ENABLE_VALVE_TEST)
-void updateValveTest();
-#endif
 
 ////////////////////// Setup //////////////////////
 
@@ -178,9 +167,7 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
 
-#if defined(ENABLE_VALVE_TEST)
   valves.begin();
-#endif
 
   // set the Time library to use Teensy's RTC to keep time
   setSyncProvider(getTeensy3Time);
@@ -350,18 +337,6 @@ void loop() {
     StatusMsg(3);
   }
 
-  // Check valve timer and swap valve if needed
-  // Log timestamp and position if changed
-  #ifdef VALVE_CHANGE_TIME
-  if (systemState == SystemState::Acquiring) {
-    changeValve();
-  }
-  #endif
-
-#if defined(ENABLE_VALVE_TEST)
-  updateValveTest();
-#endif
-
   updateTurboStartup();
 
   turbo.task();
@@ -405,25 +380,6 @@ void createNewDataFile()
   Serial.print("New SD file: ");
   Serial.println(FileName);
 }
-
-#if defined(ENABLE_VALVE_TEST)
-void updateValveTest() {
-  valves.update();
-  if (valves.isMoving() || valveTestTimer < VALVE_TEST_INTERVAL_MS) {
-    return;
-  }
-
-  valveTestTimer = 0;
-  if (valveTestMoveChamberNext) {
-    Serial.println("Valve test: toggle chamber");
-    valves.toggleChamber();
-  } else {
-    Serial.println("Valve test: toggle flush");
-    valves.toggleFlush();
-  }
-  valveTestMoveChamberNext = !valveTestMoveChamberNext;
-}
-#endif
 
 void handleCommand(char *command) {
   trimCommand(command);
