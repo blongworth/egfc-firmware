@@ -46,6 +46,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | Command | Action |
 | --- | --- |
 | `?` | Query current readable status. |
+| `TSTAT` | Query detailed turbopump status. |
 | `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `TON` | Start turbopump only. |
 | `TOFF` | Stop acquisition, then stop turbo only if RGA is off. |
@@ -75,6 +76,7 @@ Status responses use:
 
 ```text
 S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
+TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>
 ```
 
 Command acknowledgements use `OK,<command>`. Errors use `ERR,<command>,<message>`.
@@ -94,6 +96,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | Prefix | Format | Meaning |
 | --- | --- | --- |
 | `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
+| `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>` | Detailed turbopump status response. |
 | `OK,` | `OK,<command>` | Command accepted. |
 | `ERR,` | `ERR,<command>,<message>` | Command rejected. |
 | `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. |

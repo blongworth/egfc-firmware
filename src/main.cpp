@@ -115,6 +115,7 @@ void trimCommand(char *command);
 void sendOk(const char *command);
 void sendErr(const char *command, const char *message);
 void sendStatus();
+void sendTurboStatus();
 void sendResponse(const char *response);
 const char *systemStateName(SystemState state);
 void setSystemState(SystemState state);
@@ -373,6 +374,11 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "TSTAT") == 0) {
+    sendTurboStatus();
+    return;
+  }
+
   if (isCommand(command, "OFF", "!Z20") || strcmp(command, "!Z21") == 0 || strcmp(command, "!Z22") == 0) {
     setSystemState(SystemState::Stopping);
     stopRequested = true;
@@ -520,6 +526,23 @@ void sendStatus() {
            TB_Spd,
            turboReady ? "ready" : "not ready",
            filament > 0.01 ? "on" : "off");
+  sendResponse(response);
+}
+
+void sendTurboStatus() {
+  TurboDetailedStatus turboStatus = turbo.readDetailedStatus();
+  float filament = rga.filamentStatus();
+  char response[160];
+  snprintf(response, sizeof(response),
+           "TS,ERR=%d,SPD=%d,PWR=%d,V=%d,ETEMP=%d,BTEMP=%d,MTEMP=%d,RGA=%.2f",
+           turboStatus.error,
+           turboStatus.actualSpeedHz,
+           turboStatus.drivePowerW,
+           turboStatus.driveVoltage,
+           turboStatus.electronicsTemp,
+           turboStatus.pumpBottomTemp,
+           turboStatus.motorTemp,
+           filament);
   sendResponse(response);
 }
 
