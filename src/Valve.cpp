@@ -1,5 +1,7 @@
 #include "Valve.h"
 
+const unsigned long VALVE_DRIVER_WAKE_DELAY_MS = 2;
+
 Valve::Valve(uint8_t pinA, uint8_t pinB, unsigned long changeTimeMs)
   : pinA(pinA),
     pinB(pinB),
@@ -210,6 +212,7 @@ void DualValveController::enableDriver()
   }
 
   digitalWrite(sleepPin, HIGH);
+  delay(VALVE_DRIVER_WAKE_DELAY_MS);
   driverEnabled = true;
 }
 

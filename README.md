@@ -28,7 +28,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - RGA noise floor: `2`
 - RGA masses: `2, 15, 16, 18, 28, 30, 32, 33, 34, 40, 44`
 - Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
-- Valve test mode is disabled by default. To enable it, define `ENABLE_VALVE_TEST`. Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`. `VALVE_TEST_MOVE_TIME_MS` defaults to `1000`. When enabled, the firmware toggles chamber and flush valves alternately every 20 seconds, moving only one valve at a time.
+- Valve test mode is disabled by default. To enable it, define `ENABLE_VALVE_TEST`. Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`. `VALVE_TEST_MOVE_TIME_MS` defaults to `10000`. When enabled, the firmware toggles chamber and flush valves alternately every 20 seconds, moving only one valve at a time.
 
 ## Build and Upload
 

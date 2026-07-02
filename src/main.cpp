@@ -53,7 +53,7 @@ const uint8_t FLUSH_VALVE_PIN_B = 6;
 
 #if defined(ENABLE_VALVE_TEST)
 #if !defined(VALVE_TEST_MOVE_TIME_MS)
-#define VALVE_MOVE_TIME_MS 10000
+#define VALVE_TEST_MOVE_TIME_MS 10000
 #endif
 const unsigned long VALVE_TEST_INTERVAL_MS = 20000;
 DualValveController valves(VALVE_SLEEP_PIN,
@@ -61,7 +61,7 @@ DualValveController valves(VALVE_SLEEP_PIN,
                            CHAMBER_VALVE_PIN_B,
                            FLUSH_VALVE_PIN_A,
                            FLUSH_VALVE_PIN_B,
-                           VALVE_MOVE_TIME_MS);
+                           VALVE_TEST_MOVE_TIME_MS);
 elapsedMillis valveTestTimer;
 bool valveTestMoveChamberNext = true;
 #endif
