@@ -77,6 +77,7 @@ enum class SystemState {
 SystemState systemState = SystemState::Off;
 bool fullStartRequested = false;
 bool stopRequested = false;
+char activeTransitionCommand[8] = "";
 
 enum class TurboStartupState {
   Idle,
@@ -108,17 +109,21 @@ void startTurboOnly(int TB_Spd3);
 void beginTurboStartup(int speedHz, bool startRgaWhenReady, bool acquireWhenRgaReady);
 void updateTurboStartup();
 bool GEMS_Stop();
-void startRGA(bool startAcquisition);
+bool startRGA(bool startAcquisition);
 void StatusMsg(int M);
 void handleCommand(char *command);
 void trimCommand(char *command);
 void sendOk(const char *command);
+void sendAck(const char *command);
+void sendDone(const char *command);
 void sendErr(const char *command, const char *message);
 void sendStatus();
 void sendTurboStatus();
 void sendResponse(const char *response);
 const char *systemStateName(SystemState state);
 void setSystemState(SystemState state);
+bool beginTransition(const char *command);
+void clearTransition();
 void stopAcquisition();
 bool stopRgaOnly();
 void stopTurboOnly();
@@ -277,9 +282,12 @@ void loop() {
     digitalWrite(LED_PIN, LOW);
     if (GEMS_Stop()) {
       setSystemState(SystemState::Off);
+      sendDone(activeTransitionCommand);
     } else {
       setSystemState(SystemState::Error);
+      sendErr(activeTransitionCommand, "RGA filament did not confirm off");
     }
+    clearTransition();
     sendStatus();
     digitalWrite(LED_PIN, LOW);
   }
@@ -380,15 +388,22 @@ void handleCommand(char *command) {
   }
 
   if (isCommand(command, "OFF", "!Z20") || strcmp(command, "!Z21") == 0 || strcmp(command, "!Z22") == 0) {
+    clearTransition();
+    beginTransition("OFF");
+    fullStartRequested = false;
     setSystemState(SystemState::Stopping);
     stopRequested = true;
-    sendOk("OFF");
+    sendAck("OFF");
     return;
   }
 
   if (isCommand(command, "TON", "!Z10")) {
+    if (!beginTransition("TON")) {
+      sendErr("TON", "Busy");
+      return;
+    }
     startTurboOnly(TB_Spd);
-    sendOk("TON");
+    sendAck("TON");
     return;
   }
 
@@ -408,8 +423,11 @@ void handleCommand(char *command) {
       sendErr("RON", "Turbo not ready");
       return;
     }
-    startRGA(false);
-    sendOk("RON");
+    if (startRGA(false)) {
+      sendOk("RON");
+    } else {
+      sendErr("RON", "RGA failed to start");
+    }
     return;
   }
 
@@ -439,20 +457,28 @@ void handleCommand(char *command) {
   }
 
   if (isCommand(command, "RUN", "!Z11")) {
+    if (!beginTransition("RUN")) {
+      sendErr("RUN", "Busy");
+      return;
+    }
     setSystemState(SystemState::TurboStarting);
     fullStartRequested = true;
-    sendOk("RUN");
+    sendAck("RUN");
     return;
   }
 
   if (strcmp(command, "RDY") == 0) {
+    if (!beginTransition("RDY")) {
+      sendErr("RDY", "Busy");
+      return;
+    }
     StatusMsg(1);
     digitalWrite(LED_PIN, HIGH);
     StatusMsg(2);
     Serial.println("Turbo Starting ...");
     setSystemState(SystemState::TurboStarting);
     beginTurboStartup(TB_Spd, true, false);
-    sendOk("RDY");
+    sendAck("RDY");
     return;
   }
 
@@ -511,7 +537,25 @@ void sendOk(const char *command) {
   sendResponse(response);
 }
 
+void sendAck(const char *command) {
+  char response[40];
+  snprintf(response, sizeof(response), "ACK,%s", command);
+  sendResponse(response);
+}
+
+void sendDone(const char *command) {
+  if (command[0] == '\0') {
+    return;
+  }
+  char response[40];
+  snprintf(response, sizeof(response), "DONE,%s", command);
+  sendResponse(response);
+}
+
 void sendErr(const char *command, const char *message) {
+  if (command[0] == '\0') {
+    command = "SYS";
+  }
   char response[80];
   snprintf(response, sizeof(response), "ERR,%s,%s", command, message);
   sendResponse(response);
@@ -573,6 +617,18 @@ const char *systemStateName(SystemState state) {
 
 void setSystemState(SystemState state) {
   systemState = state;
+}
+
+bool beginTransition(const char *command) {
+  if (activeTransitionCommand[0] != '\0') {
+    return false;
+  }
+  snprintf(activeTransitionCommand, sizeof(activeTransitionCommand), "%s", command);
+  return true;
+}
+
+void clearTransition() {
+  activeTransitionCommand[0] = '\0';
 }
 
 void stopAcquisition() {
@@ -703,9 +759,16 @@ void updateTurboStartup() {
       Serial.println(1);
       turboStartupState = TurboStartupState::Idle;
       if (turboStartupStartRgaWhenReady) {
-        startRGA(turboStartupAcquireWhenRgaReady);
+        if (startRGA(turboStartupAcquireWhenRgaReady)) {
+          sendDone(activeTransitionCommand);
+        } else {
+          sendErr(activeTransitionCommand, "RGA failed to start");
+        }
+        clearTransition();
       } else {
         setSystemState(SystemState::TurboReady);
+        sendDone(activeTransitionCommand);
+        clearTransition();
       }
       return;
 
@@ -717,9 +780,13 @@ void updateTurboStartup() {
         Serial.println("Turbo failed to start, stopping turbo");
         StatusMsg(5);
         setSystemState(SystemState::Error);
+        sendErr(activeTransitionCommand, "Turbo failed to start");
+        clearTransition();
         stopRequested = true;
       } else {
         setSystemState(SystemState::Error);
+        sendErr(activeTransitionCommand, "Turbo failed to start");
+        clearTransition();
       }
       turboStartupState = TurboStartupState::Idle;
       return;
@@ -763,7 +830,7 @@ bool GEMS_Stop() {
   return true;
 }
 
-void startRGA(bool startAcquisition)
+bool startRGA(bool startAcquisition)
 {
   Serial.println("Turbo On, ready to turn on filament");
   setSystemState(SystemState::RgaStarting);
@@ -773,13 +840,14 @@ void startRGA(bool startAcquisition)
   if (!rga.prepareForMeasurements(NOISE_FLOOR, 0)) {
     Serial.println("RGA failed to start");
     setSystemState(SystemState::Error);
-    return;
+    return false;
   }
 
   Serial.println("RGA ready!");
 
   setSystemState(startAcquisition ? SystemState::Acquiring : SystemState::RgaReady);
   StatusMsg(12);
+  return true;
 }
 
 #ifdef USE_ETHERNET

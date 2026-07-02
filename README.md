@@ -79,7 +79,9 @@ S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
 TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>
 ```
 
-Command acknowledgements use `OK,<command>`. Errors use `ERR,<command>,<message>`.
+Immediate commands return `OK,<command>` when complete. Transition commands return `ACK,<command>` when accepted and `DONE,<command>` when the target state is reached. Errors use `ERR,<command>,<message>`.
+
+Transition commands are `TON`, `RUN`, `RDY`, and `OFF`. `OFF` can interrupt another active transition. Other transition commands return `ERR,<command>,Busy` while a transition is active.
 
 Readable states are `Off`, `Turbo starting`, `Turbo ready`, `RGA starting`, `RGA ready`, `Acquiring`, `Stopping`, and `Error`.
 
@@ -97,7 +99,9 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | --- | --- | --- |
 | `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
 | `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>` | Detailed turbopump status response. |
-| `OK,` | `OK,<command>` | Command accepted. |
+| `OK,` | `OK,<command>` | Immediate command completed. |
+| `ACK,` | `ACK,<command>` | Transition command accepted. |
+| `DONE,` | `DONE,<command>` | Transition command reached its target state. |
 | `ERR,` | `ERR,<command>,<message>` | Command rejected. |
 | `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. |
 | `R:` | `R:<timestamp>,<mass>,<current>` | One RGA mass reading. Also written to the SD data file. |
