@@ -28,7 +28,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - RGA noise floor: `2`
 - RGA masses: `2, 15, 16, 18, 28, 30, 32, 33, 34, 40, 44`
 - Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
-- Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`. During acquisition, the firmware starts each valve experiment with the flush valve recirculating and the chamber valve at A, toggles the chamber valve on `CHAMBER_VALVE_TOGGLE_INTERVAL_MS`, flushes on `VALVE_EXPERIMENT_INTERVAL_MS` or the oxygen-limit condition, and then starts a new valve experiment after `FLUSH_INTERVAL_MS`.
+- Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`. During acquisition, the firmware starts each valve experiment with the flush valve recirculating and the chamber valve at A, toggles the chamber valve on `CHAMBER_VALVE_TOGGLE_INTERVAL_MS`, flushes on `VALVE_EXPERIMENT_INTERVAL_MS` or the oxygen-limit condition, flushes chamber A and chamber B for `FLUSH_INTERVAL_MS` each, and then starts a new valve experiment.
 
 ## Build and Upload
 

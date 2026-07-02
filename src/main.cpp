@@ -64,7 +64,8 @@ DualValveController valves(VALVE_SLEEP_PIN,
 enum class ValveExperimentState {
   Idle,
   Running,
-  Flushing
+  FlushingA,
+  FlushingB
 };
 
 ValveExperimentState valveExperimentState = ValveExperimentState::Idle;
@@ -403,6 +404,7 @@ void createNewDataFile()
 }
 
 void updateValveExperiment() {
+  bool valveWasMoving = valves.isMoving();
   valves.update();
 
   if (systemState != SystemState::Acquiring) {
@@ -412,6 +414,12 @@ void updateValveExperiment() {
 
   if (valves.isMoving()) {
     return;
+  }
+
+  if (valveWasMoving &&
+      (valveExperimentState == ValveExperimentState::FlushingA ||
+       valveExperimentState == ValveExperimentState::FlushingB)) {
+    flushTimer = 0;
   }
 
   switch (valveExperimentState) {
@@ -433,7 +441,16 @@ void updateValveExperiment() {
       }
       return;
 
-    case ValveExperimentState::Flushing:
+    case ValveExperimentState::FlushingA:
+      if (flushTimer >= FLUSH_INTERVAL_MS) {
+        valves.moveChamberToB();
+        logValveChange("FLUSH_CHAMBER_B");
+        flushTimer = 0;
+        valveExperimentState = ValveExperimentState::FlushingB;
+      }
+      return;
+
+    case ValveExperimentState::FlushingB:
       if (flushTimer >= FLUSH_INTERVAL_MS) {
         startValveExperiment();
       }
@@ -454,8 +471,10 @@ void startValveExperiment() {
 void startValveFlush() {
   valves.moveFlushToFlush();
   logValveChange("FLUSH_FLUSH");
+  valves.moveChamberToA();
+  logValveChange("FLUSH_CHAMBER_A");
   flushTimer = 0;
-  valveExperimentState = ValveExperimentState::Flushing;
+  valveExperimentState = ValveExperimentState::FlushingA;
 }
 
 void logValveChange(const char *event) {
