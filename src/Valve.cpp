@@ -152,14 +152,14 @@ void DualValveController::toggleChamber()
   disableDriverIfIdle();
 }
 
-void DualValveController::moveFlushToA()
+void DualValveController::moveFlushToFlush()
 {
   enableDriver();
   valve2.moveToA();
   disableDriverIfIdle();
 }
 
-void DualValveController::moveFlushToB()
+void DualValveController::moveFlushToRecirculate()
 {
   enableDriver();
   valve2.moveToB();
