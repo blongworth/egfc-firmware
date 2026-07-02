@@ -49,14 +49,28 @@ const uint8_t CHAMBER_VALVE_PIN_B = 3;
 const uint8_t VALVE_SLEEP_PIN = 4;
 const uint8_t FLUSH_VALVE_PIN_A = 5;
 const uint8_t FLUSH_VALVE_PIN_B = 6;
-const unsigned long VALVE_TEST_MOVE_TIME_MS = 10000;
+const unsigned long VALVE_MOVE_TIME_MS = 10000;
+const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MS = 20000;
+const unsigned long VALVE_EXPERIMENT_INTERVAL_MS = 60000;
+const unsigned long FLUSH_INTERVAL_MS = 30000;
 
 DualValveController valves(VALVE_SLEEP_PIN,
                            CHAMBER_VALVE_PIN_A,
                            CHAMBER_VALVE_PIN_B,
                            FLUSH_VALVE_PIN_A,
                            FLUSH_VALVE_PIN_B,
-                           VALVE_TEST_MOVE_TIME_MS);
+                           VALVE_MOVE_TIME_MS);
+
+enum class ValveExperimentState {
+  Idle,
+  Running,
+  Flushing
+};
+
+ValveExperimentState valveExperimentState = ValveExperimentState::Idle;
+elapsedMillis valveExperimentTimer;
+elapsedMillis chamberValveTimer;
+elapsedMillis flushTimer;
 
 #ifdef USE_ETHERNET
 // Set up ethernet
@@ -149,6 +163,11 @@ void GEMS_Measurement(int TB_Spd2, int AMU_);
 int int_out(char aaa[50], int a, int b);
 time_t getTeensy3Time();
 void getTimeISO8601(char *iso8601Time, size_t bufferSize);
+void updateValveExperiment();
+void startValveExperiment();
+void startValveFlush();
+void logValveChange(const char *event);
+bool oxygenOutsideRange();
 
 ////////////////////// Setup //////////////////////
 
@@ -337,6 +356,8 @@ void loop() {
     StatusMsg(3);
   }
 
+  updateValveExperiment();
+
   updateTurboStartup();
 
   turbo.task();
@@ -379,6 +400,94 @@ void createNewDataFile()
   }
   Serial.print("New SD file: ");
   Serial.println(FileName);
+}
+
+void updateValveExperiment() {
+  valves.update();
+
+  if (systemState != SystemState::Acquiring) {
+    valveExperimentState = ValveExperimentState::Idle;
+    return;
+  }
+
+  if (valves.isMoving()) {
+    return;
+  }
+
+  switch (valveExperimentState) {
+    case ValveExperimentState::Idle:
+      startValveExperiment();
+      return;
+
+    case ValveExperimentState::Running:
+      if (chamberValveTimer >= CHAMBER_VALVE_TOGGLE_INTERVAL_MS) {
+        chamberValveTimer = 0;
+        valves.toggleChamber();
+        logValveChange("CHAMBER_TOGGLE");
+        return;
+      }
+
+      if (valveExperimentTimer >= VALVE_EXPERIMENT_INTERVAL_MS || oxygenOutsideRange()) {
+        startValveFlush();
+        return;
+      }
+      return;
+
+    case ValveExperimentState::Flushing:
+      if (flushTimer >= FLUSH_INTERVAL_MS) {
+        startValveExperiment();
+      }
+      return;
+  }
+}
+
+void startValveExperiment() {
+  valves.moveFlushToRecirculate();
+  logValveChange("FLUSH_RECIRCULATE");
+  valves.moveChamberToA();
+  logValveChange("CHAMBER_A");
+  valveExperimentTimer = 0;
+  chamberValveTimer = 0;
+  valveExperimentState = ValveExperimentState::Running;
+}
+
+void startValveFlush() {
+  valves.moveFlushToFlush();
+  logValveChange("FLUSH_FLUSH");
+  flushTimer = 0;
+  valveExperimentState = ValveExperimentState::Flushing;
+}
+
+void logValveChange(const char *event) {
+  char iso8601Time[25];
+  getTimeISO8601(iso8601Time, sizeof(iso8601Time));
+
+  char valveRow[120];
+  snprintf(valveRow, sizeof(valveRow), "V:%s,%s,CHAMBER=%s,FLUSH=%s",
+           iso8601Time,
+           event,
+           valves.chamberPositionName(),
+           valves.flushPositionName());
+  Serial.println(valveRow);
+
+  if (dataFile) {
+    dataFile.println(valveRow);
+  } else {
+    Serial.print("Could not open SD file: ");
+    Serial.print(FileName);
+    Serial.println(" for valve write!");
+  }
+
+#ifdef USE_ETHERNET
+  Udp.beginPacket(destinationIP, destinationPort);
+  Udp.println(valveRow);
+  Udp.write(13);
+  Udp.endPacket();
+#endif
+}
+
+bool oxygenOutsideRange() {
+  return false;
 }
 
 void handleCommand(char *command) {

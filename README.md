@@ -28,7 +28,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - RGA noise floor: `2`
 - RGA masses: `2, 15, 16, 18, 28, 30, 32, 33, 34, 40, 44`
 - Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
-- Valve test mode is disabled by default. To enable it, define `ENABLE_VALVE_TEST`. Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`. `VALVE_TEST_MOVE_TIME_MS` defaults to `10000`. When enabled, the firmware toggles chamber and flush valves alternately every 20 seconds, moving only one valve at a time.
+- Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`. During acquisition, the firmware starts each valve experiment with the flush valve recirculating and the chamber valve at A, toggles the chamber valve on `CHAMBER_VALVE_TOGGLE_INTERVAL_MS`, flushes on `VALVE_EXPERIMENT_INTERVAL_MS` or the oxygen-limit condition, and then starts a new valve experiment after `FLUSH_INTERVAL_MS`.
 
 ## Build and Upload
 
@@ -100,6 +100,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | --- | --- | --- |
 | `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
 | `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>` | Detailed turbopump status response. |
+| `V:` | `V:<timestamp>,<event>,CHAMBER=<state>,FLUSH=<state>` | Valve change event. Also written to the SD data file. |
 | `OK,` | `OK,<command>` | Immediate command completed. |
 | `ACK,` | `ACK,<command>` | Transition command accepted. |
 | `DONE,` | `DONE,<command>` | Transition command reached its target state. |
