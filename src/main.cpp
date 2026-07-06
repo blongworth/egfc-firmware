@@ -55,6 +55,8 @@ const unsigned long VALVE_MOVE_TIME_MS = 10000;
 const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MS = 20000;
 const unsigned long VALVE_EXPERIMENT_INTERVAL_MS = 60000;
 const unsigned long FLUSH_INTERVAL_MS = 30000;
+const float OXYGEN_MIN_MG_L = 2.0f;
+const float OXYGEN_MAX_MG_L = 12.0f;
 const uint32_t SCALUP_BAUD = 9600;
 
 DualValveController valves(VALVE_SLEEP_PIN,
@@ -553,7 +555,12 @@ void logScalupReadingIfNew() {
 }
 
 bool oxygenOutsideRange() {
-  return false;
+  if (!scalup.hasReading()) {
+    return false;
+  }
+
+  float oxygenMgL = scalup.latest().doMgL;
+  return oxygenMgL < OXYGEN_MIN_MG_L || oxygenMgL > OXYGEN_MAX_MG_L;
 }
 
 void handleCommand(char *command) {
