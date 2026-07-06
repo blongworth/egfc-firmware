@@ -9,6 +9,7 @@
 #include <TimeLib.h>
 
 #include "RGA.h"
+#include "SCALUP.h"
 #include "Turbo.h"
 #include "Valve.h"
 
@@ -43,6 +44,7 @@ File dataFile;
 bool file_created = false;
 TurboPump turbo;
 RGADevice rga(Serial4);
+SCALUPDevice scalup(Serial3);
 
 const uint8_t CHAMBER_VALVE_PIN_A = 2;
 const uint8_t CHAMBER_VALVE_PIN_B = 3;
@@ -53,6 +55,7 @@ const unsigned long VALVE_MOVE_TIME_MS = 10000;
 const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MS = 20000;
 const unsigned long VALVE_EXPERIMENT_INTERVAL_MS = 60000;
 const unsigned long FLUSH_INTERVAL_MS = 30000;
+const uint32_t SCALUP_BAUD = 9600;
 
 DualValveController valves(VALVE_SLEEP_PIN,
                            CHAMBER_VALVE_PIN_A,
@@ -184,6 +187,7 @@ void setup() {
   Serial.printf("\n\nGEMS Lander %s \n", compileTime);
 
   rga.begin(28800, SERIAL_8N1);
+  scalup.begin(SCALUP_BAUD);
 
   pinMode(LED_PIN, OUTPUT);
 
@@ -360,6 +364,8 @@ void loop() {
   updateValveExperiment();
 
   updateTurboStartup();
+
+  scalup.task();
 
   turbo.task();
 

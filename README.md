@@ -13,6 +13,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 
 - `src/main.cpp`: main setup, loop, surface command handling, run/stop sequencing, SD logging, status messages.
 - `src/RGA.cpp` and `src/RGA.h`: RGA serial module with status, noise-floor, and mass-scan helpers.
+- `src/SCALUP.cpp` and `src/SCALUP.h`: SCALUP sonde serial parser with the most recent parsed reading.
 - `src/Turbo.cpp` and `src/Turbo.h`: turbopump USB host module with start/stop/speed/status helpers.
 - `src/Valve.cpp` and `src/Valve.h`: timed dual-valve H-bridge module with chamber/flush methods, commanded-position state, and shared `SLP` control.
 - `platformio.ini`: Teensy 4.1 PlatformIO build configuration.
@@ -22,6 +23,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Board: Teensy 4.1
 - Debug/surface serial: `Serial` at `9600`
 - RGA serial: `Serial4` at `28800`, `SERIAL_8N1`
+- SCALUP serial: `Serial3` at `9600`, `SERIAL_8N1`
 - Turbopump serial: USB host serial at `9600`
 - SD card: `BUILTIN_SDCARD`
 - Default turbopump speed: `1200 Hz`
