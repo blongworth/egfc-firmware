@@ -95,6 +95,7 @@ int TB_Spd = 1200;
 unsigned long Timer;
 int turbo_bad_ctr = 0;
 elapsedMillis turbo_bad_timer;
+unsigned long lastLoggedScalupSequence = 0;
 
 enum class SystemState {
   Off,
@@ -171,6 +172,7 @@ void updateValveExperiment();
 void startValveExperiment();
 void startValveFlush();
 void logValveChange(const char *event);
+void logScalupReadingIfNew();
 bool oxygenOutsideRange();
 
 ////////////////////// Setup //////////////////////
@@ -366,6 +368,7 @@ void loop() {
   updateTurboStartup();
 
   scalup.task();
+  logScalupReadingIfNew();
 
   turbo.task();
 
@@ -506,6 +509,44 @@ void logValveChange(const char *event) {
 #ifdef USE_ETHERNET
   Udp.beginPacket(destinationIP, destinationPort);
   Udp.println(valveRow);
+  Udp.write(13);
+  Udp.endPacket();
+#endif
+}
+
+void logScalupReadingIfNew() {
+  if (!scalup.hasReading()) {
+    return;
+  }
+
+  unsigned long sequence = scalup.latestSequence();
+  if (sequence == lastLoggedScalupSequence) {
+    return;
+  }
+  lastLoggedScalupSequence = sequence;
+
+  const SCALUPReading &reading = scalup.latest();
+  char scalupRow[160];
+  snprintf(scalupRow, sizeof(scalupRow),
+           "P:%s,%.3f,%.3f,%.3f,%.3f",
+           reading.timestamp,
+           reading.tempC,
+           reading.salPSU,
+           reading.doMgL,
+           reading.ph);
+  Serial.println(scalupRow);
+
+  if (dataFile) {
+    dataFile.println(scalupRow);
+  } else {
+    Serial.print("Could not open SD file: ");
+    Serial.print(FileName);
+    Serial.println(" for SCALUP write!");
+  }
+
+#ifdef USE_ETHERNET
+  Udp.beginPacket(destinationIP, destinationPort);
+  Udp.println(scalupRow);
   Udp.write(13);
   Udp.endPacket();
 #endif

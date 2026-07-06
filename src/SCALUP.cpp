@@ -52,6 +52,11 @@ bool SCALUPDevice::hasReading() const
   return latestReading.valid;
 }
 
+unsigned long SCALUPDevice::latestSequence() const
+{
+  return readingSequence;
+}
+
 void SCALUPDevice::parseLine(char *line)
 {
   trimLine(line);
@@ -107,6 +112,7 @@ void SCALUPDevice::publishPending()
   pendingReading.valid = true;
   pendingReading.receivedMillis = millis();
   latestReading = pendingReading;
+  readingSequence++;
   pendingFields = 0;
 }
 

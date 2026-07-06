@@ -33,6 +33,7 @@ public:
 
   const SCALUPReading &latest() const;
   bool hasReading() const;
+  unsigned long latestSequence() const;
 
 private:
   static const size_t LINE_BUFFER_SIZE = 180;
@@ -43,6 +44,7 @@ private:
   SCALUPReading latestReading;
   SCALUPReading pendingReading;
   uint8_t pendingFields = 0;
+  unsigned long readingSequence = 0;
 
   void parseLine(char *line);
   void publishPending();
