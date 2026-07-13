@@ -8,6 +8,7 @@ const uint8_t SCALUP_ALL_FIELDS = SCALUP_FIELD_RDO |
                                   SCALUP_FIELD_COND |
                                   SCALUP_FIELD_PRESSURE |
                                   SCALUP_FIELD_PH;
+const bool SCALUP_ECHO_TO_CONSOLE = true;
 
 SCALUPDevice::SCALUPDevice(HardwareSerial &serial)
   : serial(serial)
@@ -23,6 +24,10 @@ void SCALUPDevice::task()
 {
   while (serial.available()) {
     char c = serial.read();
+    if (SCALUP_ECHO_TO_CONSOLE) {
+      Serial.write(c);
+    }
+
     if (c == '\r') {
       continue;
     }
