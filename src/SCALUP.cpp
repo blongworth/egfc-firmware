@@ -1,5 +1,7 @@
 #include "SCALUP.h"
 
+#include <TimeLib.h>
+
 const uint8_t SCALUP_FIELD_RDO = 1 << 0;
 const uint8_t SCALUP_FIELD_COND = 1 << 1;
 const uint8_t SCALUP_FIELD_PRESSURE = 1 << 2;
@@ -9,6 +11,12 @@ const uint8_t SCALUP_ALL_FIELDS = SCALUP_FIELD_RDO |
                                   SCALUP_FIELD_PRESSURE |
                                   SCALUP_FIELD_PH;
 const bool SCALUP_ECHO_TO_CONSOLE = true;
+
+static void formatCurrentRtcTimestamp(char *buffer, size_t bufferSize)
+{
+  snprintf(buffer, bufferSize, "%04d-%02d-%02dT%02d:%02d:%02dZ",
+           year(), month(), day(), hour(), minute(), second());
+}
 
 SCALUPDevice::SCALUPDevice(HardwareSerial &serial)
   : serial(serial)
@@ -116,6 +124,8 @@ void SCALUPDevice::publishPending()
 
   pendingReading.valid = true;
   pendingReading.receivedMillis = millis();
+  formatCurrentRtcTimestamp(pendingReading.rtcTimestamp,
+                            sizeof(pendingReading.rtcTimestamp));
   latestReading = pendingReading;
   readingSequence++;
   pendingFields = 0;

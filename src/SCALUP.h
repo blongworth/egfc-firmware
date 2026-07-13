@@ -4,6 +4,7 @@
 
 struct SCALUPReading {
   bool valid = false;
+  char rtcTimestamp[25] = "";
   char timestamp[32] = "";
   unsigned long receivedMillis = 0;
 
