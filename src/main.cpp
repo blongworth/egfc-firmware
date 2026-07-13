@@ -57,7 +57,7 @@ const unsigned long VALVE_EXPERIMENT_INTERVAL_MS = 60000;
 const unsigned long FLUSH_INTERVAL_MS = 30000;
 const float OXYGEN_MIN_MG_L = 2.0f;
 const float OXYGEN_MAX_MG_L = 12.0f;
-const uint32_t SCALUP_BAUD = 9600;
+const uint32_t SCALUP_BAUD = 28800;
 
 DualValveController valves(VALVE_SLEEP_PIN,
                            CHAMBER_VALVE_PIN_A,
