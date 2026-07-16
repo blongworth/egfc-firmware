@@ -14,6 +14,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - `src/main.cpp`: main setup, loop, surface command handling, run/stop sequencing, SD logging, status messages.
 - `src/RGA.cpp` and `src/RGA.h`: RGA serial module with status, noise-floor, and mass-scan helpers.
 - `src/SCALUP.cpp` and `src/SCALUP.h`: SCALUP sonde serial parser with the most recent parsed reading.
+- `src/PwmRpm.cpp` and `src/PwmRpm.h`: PWM output and RPM pulse-count readback helper.
 - `src/Turbo.cpp` and `src/Turbo.h`: turbopump USB host module with start/stop/speed/status helpers.
 - `src/Valve.cpp` and `src/Valve.h`: timed dual-valve H-bridge module with chamber/flush methods, commanded-position state, and shared `SLP` control.
 - `platformio.ini`: Teensy 4.1 PlatformIO build configuration.
@@ -27,6 +28,8 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Turbopump serial: USB host serial at `9600`
 - SD card: `BUILTIN_SDCARD`
 - Default turbopump speed: `1200 Hz`
+- Pump PWM output: pin `7`
+- Pump RPM readback: pin `8`
 - RGA noise floor: `2`
 - RGA masses: `2, 15, 16, 18, 28, 30, 32, 33, 34, 40, 44`
 - Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
@@ -50,6 +53,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | --- | --- |
 | `?` | Query current readable status. |
 | `TSTAT` | Query detailed turbopump status. |
+| `PSTAT` | Query pump PWM/RPM status. |
 | `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `TON` | Start turbopump only. |
 | `TOFF` | Stop acquisition, then stop turbo only if RGA is off. |
@@ -60,6 +64,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `RUN` | Full start: turbopump, ready dwell, RGA, then acquisition. |
 | `RDY` | Full start to RGA ready, without acquisition. |
 | `SPD####` | Set turbopump target speed in Hz, for example `SPD1200`. |
+| `PMP##` | Set pump PWM duty cycle percent, for example `PMP50`. |
 | `TIME<unix>` | Set RTC/system time from Unix time. |
 | `CLR` | Clear error state. |
 
@@ -80,6 +85,7 @@ Status responses use:
 ```text
 S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
 TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>
+PS,PWM=<duty_percent>,RPM=<rpm>
 ```
 
 Immediate commands return `OK,<command>` when complete. Transition commands return `ACK,<command>` when accepted and `DONE,<command>` when the target state is reached. Errors use `ERR,<command>,<message>`.
@@ -102,8 +108,10 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | --- | --- | --- |
 | `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
 | `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>` | Detailed turbopump status response. |
+| `PS,` | `PS,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
 | `V:` | `V:<timestamp>,<event>,CHAMBER=<state>,FLUSH=<state>` | Valve change event. Also written to the SD data file. |
 | `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
+| `PM:` | `PM:<timestamp>,<duty_percent>,<rpm>` | Pump status row every 10 seconds. Also written to the SD data file. |
 | `OK,` | `OK,<command>` | Immediate command completed. |
 | `ACK,` | `ACK,<command>` | Transition command accepted. |
 | `DONE,` | `DONE,<command>` | Transition command reached its target state. |

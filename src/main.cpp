@@ -10,6 +10,7 @@
 
 #include "RGA.h"
 #include "SCALUP.h"
+#include "PwmRpm.h"
 #include "Turbo.h"
 #include "Valve.h"
 
@@ -58,6 +59,14 @@ const unsigned long FLUSH_INTERVAL_MS = 30000;
 const float OXYGEN_MIN_MG_L = 2.0f;
 const float OXYGEN_MAX_MG_L = 12.0f;
 const uint32_t SCALUP_BAUD = 28800;
+const uint8_t PUMP_PWM_PIN = 7;
+const uint8_t PUMP_RPM_PIN = 8;
+const unsigned long PUMP_LOG_INTERVAL_MS = 10000;
+
+const PwmRpm::Config PUMP_CONFIG = {
+  PUMP_PWM_PIN,
+  PUMP_RPM_PIN
+};
 
 DualValveController valves(VALVE_SLEEP_PIN,
                            CHAMBER_VALVE_PIN_A,
@@ -65,6 +74,7 @@ DualValveController valves(VALVE_SLEEP_PIN,
                            FLUSH_VALVE_PIN_A,
                            FLUSH_VALVE_PIN_B,
                            VALVE_MOVE_TIME_MS);
+PwmRpm pump(PUMP_CONFIG);
 
 enum class ValveExperimentState {
   Idle,
@@ -77,6 +87,7 @@ ValveExperimentState valveExperimentState = ValveExperimentState::Idle;
 elapsedMillis valveExperimentTimer;
 elapsedMillis chamberValveTimer;
 elapsedMillis flushTimer;
+elapsedMillis pumpLogTimer;
 
 #ifdef USE_ETHERNET
 // Set up ethernet
@@ -156,6 +167,7 @@ void sendDone(const char *command);
 void sendErr(const char *command, const char *message);
 void sendStatus();
 void sendTurboStatus();
+void sendPumpStatus();
 void sendResponse(const char *response);
 const char *systemStateName(SystemState state);
 void setSystemState(SystemState state);
@@ -175,6 +187,8 @@ void startValveExperiment();
 void startValveFlush();
 void logValveChange(const char *event);
 void logScalupReadingIfNew();
+void updatePumpLog();
+void logPumpStatus();
 bool oxygenOutsideRange();
 
 ////////////////////// Setup //////////////////////
@@ -196,6 +210,9 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
 
   valves.begin();
+  if (!pump.begin()) {
+    Serial.println("Pump PWM/RPM initialization failed");
+  }
 
   // set the Time library to use Teensy's RTC to keep time
   setSyncProvider(getTeensy3Time);
@@ -368,6 +385,9 @@ void loop() {
   updateValveExperiment();
 
   updateTurboStartup();
+
+  pump.update();
+  updatePumpLog();
 
   scalup.task();
   logScalupReadingIfNew();
@@ -555,6 +575,42 @@ void logScalupReadingIfNew() {
 #endif
 }
 
+void updatePumpLog() {
+  if (pumpLogTimer < PUMP_LOG_INTERVAL_MS) {
+    return;
+  }
+
+  pumpLogTimer = 0;
+  logPumpStatus();
+}
+
+void logPumpStatus() {
+  char iso8601Time[25];
+  getTimeISO8601(iso8601Time, sizeof(iso8601Time));
+
+  char pumpRow[80];
+  snprintf(pumpRow, sizeof(pumpRow), "PM:%s,%.1f,%.1f",
+           iso8601Time,
+           pump.dutyCycle(),
+           pump.rpm());
+  Serial.println(pumpRow);
+
+  if (dataFile) {
+    dataFile.println(pumpRow);
+  } else {
+    Serial.print("Could not open SD file: ");
+    Serial.print(FileName);
+    Serial.println(" for pump write!");
+  }
+
+#ifdef USE_ETHERNET
+  Udp.beginPacket(destinationIP, destinationPort);
+  Udp.println(pumpRow);
+  Udp.write(13);
+  Udp.endPacket();
+#endif
+}
+
 bool oxygenOutsideRange() {
   if (!scalup.hasReading()) {
     return false;
@@ -577,6 +633,23 @@ void handleCommand(char *command) {
 
   if (strcmp(command, "TSTAT") == 0) {
     sendTurboStatus();
+    return;
+  }
+
+  if (strcmp(command, "PSTAT") == 0) {
+    sendPumpStatus();
+    return;
+  }
+
+  if (strncmp(command, "PMP", 3) == 0) {
+    char *end = nullptr;
+    float duty = strtof(command + 3, &end);
+    if (end == command + 3 || *end != '\0' || duty < 0.0f || duty > 100.0f) {
+      sendErr("PMP", "Invalid duty");
+      return;
+    }
+    pump.setDutyCycle(duty);
+    sendOk("PMP");
     return;
   }
 
@@ -780,6 +853,14 @@ void sendTurboStatus() {
            turboStatus.pumpBottomTemp,
            turboStatus.motorTemp,
            filament);
+  sendResponse(response);
+}
+
+void sendPumpStatus() {
+  char response[60];
+  snprintf(response, sizeof(response), "PS,PWM=%.1f,RPM=%.1f",
+           pump.dutyCycle(),
+           pump.rpm());
   sendResponse(response);
 }
 
