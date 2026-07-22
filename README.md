@@ -146,7 +146,7 @@ Detailed status rows are sent when `StatusMsg(3)` runs. In serial builds, the pa
 1. Connect cables
   * 15-pin surface power and data
   * 8-pin SCALUP sonde (connector "A")
-  * 8-pin pump/valve (connector "B")
+  * 8-pin pump/valve (connector "P")
   * 6-pin USB (optional, currently some connection issues)
 2. Power the system and open the serial monitor at `9600`.
 3. Confirm boot output shows RTC, RGA initialization, SD initialization, and `Surface ready`.
