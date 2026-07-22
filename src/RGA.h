@@ -21,6 +21,8 @@ public:
 
   void setNoiseFloor(int noiseFloor);
   void startScan(int mass);
+  void startScanNonBlocking(int mass);
+  bool scanDataAvailable() const;
   bool waitForScanData(unsigned long timeoutMs);
   int readScan();
 

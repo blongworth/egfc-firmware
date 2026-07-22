@@ -184,6 +184,22 @@ void RGADevice::startScan(int mass)
   delay(25);
 }
 
+void RGADevice::startScanNonBlocking(int mass)
+{
+  while (serial.available()) {
+    serial.read();
+  }
+
+  char s[10];
+  sprintf(s, "MR%d\r", mass);
+  serial.write(s);
+}
+
+bool RGADevice::scanDataAvailable() const
+{
+  return serial.available() >= 4;
+}
+
 bool RGADevice::waitForScanData(unsigned long timeoutMs)
 {
   if (timeoutMs == 0) {

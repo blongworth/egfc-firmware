@@ -160,7 +160,7 @@ Detailed status rows are sent when `StatusMsg(3)` runs. In serial builds, the pa
 ## Notes
 
 - If time permits, start the turbo manually with `TON` and allow to run as long as possible (~1h) before starting the RGA (`RON`) and aquisition (`AON`). This is better for the RGA and aquisition stability.
-- Several startup, shutdown, RGA, and turbopump operations are blocking in the current firmware.
+- RGA mass acquisition is non-blocking during `Acquiring`, but several startup, shutdown, RGA setup, and turbopump operations are still blocking.
 - The active SD file is named `gems_YYYY-MM-DD-HH-MM.txt`.
 - Data files rotate every 4th hour when the minute equals `10`.
 - Pump RPM accuracy depends on the pump tach signal, pullup/level shifting, interrupt edge, and `pulsesPerRevolution` setting in `PwmRpm::Config`.

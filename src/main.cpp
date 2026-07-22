@@ -146,7 +146,19 @@ const unsigned long TURBO_STARTUP_TIMEOUT_MS = 300000;
 const unsigned long TURBO_STARTUP_POLL_MS = 1000;
 const unsigned long TURBO_READY_BEFORE_RGA_MS = 300000;
 const unsigned long RGA_STARTUP_TIMEOUT_MS = 60000;
+const unsigned long RGA_SCAN_TIMEOUT_MS = 3000;
 elapsedMillis turboReadyTimer;
+
+enum class RgaAcquisitionState {
+  Idle,
+  StartScan,
+  WaitForScan
+};
+
+RgaAcquisitionState rgaAcquisitionState = RgaAcquisitionState::Idle;
+elapsedMillis rgaScanTimer;
+byte rgaMassIndex = 0;
+int activeRgaMass = 0;
 
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 
@@ -178,7 +190,11 @@ bool stopRgaOnly();
 void stopTurboOnly();
 bool isCommand(const char *command, const char *modern, const char *legacy);
 void printDigits(int digits);
-void GEMS_Measurement(int TB_Spd2, int AMU_);
+void updateRgaAcquisition();
+void startNextRgaScan();
+void finishRgaScan();
+void logRgaMeasurement(int mass, int current);
+void checkTurboDuringAcquisition();
 int int_out(char aaa[50], int a, int b);
 time_t getTeensy3Time();
 void getTimeISO8601(char *iso8601Time, size_t bufferSize);
@@ -369,18 +385,7 @@ void loop() {
     }
   }
 
-  // Measurement loop
-  if (systemState == SystemState::Acquiring) {
-    rga.flushInput();
-    Serial.println(TB_Spd);
-    // measure AMUS in AMU array sequentially
-    for (byte i = 0; i < NUM_AMUS; i++) {
-      GEMS_Measurement(TB_Spd, AMUS[i]);
-    }
-
-    // send turbo status once per mass cycle
-    StatusMsg(3);
-  }
+  updateRgaAcquisition();
 
   updateValveExperiment();
 
@@ -891,6 +896,9 @@ const char *systemStateName(SystemState state) {
 
 void setSystemState(SystemState state) {
   systemState = state;
+  if (state != SystemState::Acquiring) {
+    rgaAcquisitionState = RgaAcquisitionState::Idle;
+  }
 }
 
 bool beginTransition(const char *command) {
@@ -1207,26 +1215,67 @@ void printDigits(int digits) {
 }
 #endif
 
-void GEMS_Measurement(int TB_Spd2, int AMU_) {
-  int current;
+void updateRgaAcquisition() {
+  if (systemState != SystemState::Acquiring) {
+    rgaAcquisitionState = RgaAcquisitionState::Idle;
+    return;
+  }
+
+  switch (rgaAcquisitionState) {
+    case RgaAcquisitionState::Idle:
+      rgaMassIndex = 0;
+      Serial.println(TB_Spd);
+      rgaAcquisitionState = RgaAcquisitionState::StartScan;
+      return;
+
+    case RgaAcquisitionState::StartScan:
+      startNextRgaScan();
+      return;
+
+    case RgaAcquisitionState::WaitForScan:
+      if (rga.scanDataAvailable()) {
+        finishRgaScan();
+        return;
+      }
+
+      if (rgaScanTimer >= RGA_SCAN_TIMEOUT_MS) {
+        Serial.print("RGA scan timeout for mass ");
+        Serial.println(activeRgaMass);
+        rgaMassIndex++;
+        rgaAcquisitionState = RgaAcquisitionState::StartScan;
+      }
+      return;
+  }
+}
+
+void startNextRgaScan() {
+  if (rgaMassIndex >= NUM_AMUS) {
+    StatusMsg(3);
+    rgaMassIndex = 0;
+  }
+
+  activeRgaMass = AMUS[rgaMassIndex];
   Serial.print("Measuring mass: ");
-  Serial.println(AMU_);
-  rga.startScan(AMU_);
+  Serial.println(activeRgaMass);
+  rga.startScanNonBlocking(activeRgaMass);
+  rgaScanTimer = 0;
+  rgaAcquisitionState = RgaAcquisitionState::WaitForScan;
+}
 
-  // Read ADV while waiting for response
-  // TODO: do this as non-blocking read function in main loop
-  rga.waitForScanData(3000);
+void finishRgaScan() {
+  int current = rga.readScan();
+  logRgaMeasurement(activeRgaMass, current);
+  checkTurboDuringAcquisition();
+  rgaMassIndex++;
+  rgaAcquisitionState = RgaAcquisitionState::StartScan;
+}
 
-  //read scan and write to SD + UDP
-  current = rga.readScan();
-
-  // TODO: populate data structure, output to file, etc. outside of function
-
+void logRgaMeasurement(int mass, int current) {
   char iso8601Time[25];
   getTimeISO8601(iso8601Time, sizeof(iso8601Time));
 
   char csvRow[100];
-  snprintf(csvRow, sizeof(csvRow), "R:%s,%d,%d", iso8601Time, AMU_, current);
+  snprintf(csvRow, sizeof(csvRow), "R:%s,%d,%d", iso8601Time, mass, current);
   Serial.println(csvRow);
 
   Serial.println("Writing to file.");
@@ -1245,17 +1294,16 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
   Udp.write(13);
   Udp.endPacket();
 #endif
+}
 
-
-  // Stop GEMS if N_BAD_CHECKS occur within BAD_CHECK_TIME window
+void checkTurboDuringAcquisition() {
   const int N_BAD_CHECKS = 2;
   const unsigned long BAD_CHECK_TIME = 20000; // 20 seconds in milliseconds
 
-  if (!turbo.isReady(TB_Spd2)) {
-    StatusMsg(3); // Update status to indicate turbo problem
+  if (!turbo.isReady(TB_Spd)) {
+    StatusMsg(3);
     Serial.println("Turbo problem detected");
     if (turbo_bad_timer > BAD_CHECK_TIME) {
-      // Reset counter and timer if outside time window
       turbo_bad_ctr = 1;
       turbo_bad_timer = 0;
     } else {
@@ -1265,13 +1313,11 @@ void GEMS_Measurement(int TB_Spd2, int AMU_) {
         StatusMsg(5);
         setSystemState(SystemState::Stopping);
         stopRequested = true;
-        // Reset for next time
         turbo_bad_ctr = 0;
         turbo_bad_timer = 0;
       }
     }
   } else if (turbo_bad_timer > BAD_CHECK_TIME) {
-    // Reset if no failures for BAD_CHECK_TIME
     turbo_bad_ctr = 0;
     turbo_bad_timer = 0;
   }
