@@ -19,6 +19,9 @@ public:
   bool calibrateAll(unsigned long timeoutMs);
   bool prepareForMeasurements(int noiseFloor, unsigned long timeoutMs);
   float totalPressure(unsigned long timeoutMs);
+  int electronMultiplierOption(unsigned long timeoutMs);
+  bool turnElectronMultiplierOn(int biasVoltage, unsigned long timeoutMs);
+  bool turnElectronMultiplierOff(unsigned long timeoutMs);
 
   void setNoiseFloor(int noiseFloor);
   void startScan(int mass);
@@ -34,6 +37,7 @@ private:
   size_t write(const char *command);
   size_t readBytes(char *buffer, size_t length);
   int read();
+  int readIntResponse(const char *command, unsigned long timeoutMs);
   float readStatus(const char *command, int start, int end);
   bool readStatusBytes(unsigned long timeoutMs);
 };

@@ -171,6 +171,25 @@ float RGADevice::totalPressure(unsigned long timeoutMs)
   return static_cast<float>(current) * 1.0e-16f;
 }
 
+int RGADevice::electronMultiplierOption(unsigned long timeoutMs)
+{
+  return readIntResponse("MO?\r", timeoutMs);
+}
+
+bool RGADevice::turnElectronMultiplierOn(int biasVoltage, unsigned long timeoutMs)
+{
+  char command[12];
+  snprintf(command, sizeof(command), "HV%d\r", biasVoltage);
+  write(command);
+  return readStatusBytes(timeoutMs);
+}
+
+bool RGADevice::turnElectronMultiplierOff(unsigned long timeoutMs)
+{
+  write("HV0\r");
+  return readStatusBytes(timeoutMs);
+}
+
 float RGADevice::readStatus(const char *command, int start, int end)
 {
   serial.write(command);
@@ -249,6 +268,25 @@ int RGADevice::readScan()
 int RGADevice::read()
 {
   return serial.read();
+}
+
+int RGADevice::readIntResponse(const char *command, unsigned long timeoutMs)
+{
+  flushInput();
+  write(command);
+
+  elapsedMillis timer;
+  while (serial.available() < 1 && timer < timeoutMs) {
+  }
+
+  if (serial.available() < 1) {
+    return -1;
+  }
+
+  char response[12];
+  size_t len = serial.readBytesUntil('\r', response, sizeof(response) - 1);
+  response[len] = '\0';
+  return atoi(response);
 }
 
 bool RGADevice::readStatusBytes(unsigned long timeoutMs)

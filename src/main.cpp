@@ -148,6 +148,10 @@ const unsigned long TURBO_READY_BEFORE_RGA_MS = 300000;
 const unsigned long RGA_STARTUP_TIMEOUT_MS = 60000;
 const unsigned long RGA_SCAN_TIMEOUT_MS = 3000;
 const unsigned long RGA_TOTAL_PRESSURE_TIMEOUT_MS = 3000;
+const unsigned long RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS = 3000;
+const int RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400;
+const bool RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false;
+const float RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0f;
 elapsedMillis turboReadyTimer;
 
 enum class RgaAcquisitionState {
@@ -182,6 +186,8 @@ void sendStatus();
 void sendTurboStatus();
 void sendPumpStatus();
 void sendRgaTotalPressure();
+bool turnElectronMultiplierOn();
+bool turnElectronMultiplierOff();
 void sendResponse(const char *response);
 const char *systemStateName(SystemState state);
 void setSystemState(SystemState state);
@@ -653,6 +659,20 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "EMON") == 0) {
+    if (turnElectronMultiplierOn()) {
+      sendOk("EMON");
+    }
+    return;
+  }
+
+  if (strcmp(command, "EMOFF") == 0) {
+    if (turnElectronMultiplierOff()) {
+      sendOk("EMOFF");
+    }
+    return;
+  }
+
   if (strcmp(command, "PSTAT") == 0) {
     sendPumpStatus();
     return;
@@ -891,6 +911,58 @@ void sendRgaTotalPressure() {
   char response[40];
   snprintf(response, sizeof(response), "TP,%.6e", totalPressureA);
   sendResponse(response);
+}
+
+bool turnElectronMultiplierOn() {
+  if (systemState == SystemState::Acquiring) {
+    sendErr("EMON", "RGA acquiring");
+    return false;
+  }
+
+  if (rga.filamentStatus() <= 0.01f) {
+    sendErr("EMON", "Filament off");
+    return false;
+  }
+
+  int multiplierOption = rga.electronMultiplierOption(RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS);
+  if (multiplierOption != 1) {
+    sendErr("EMON", multiplierOption == 0 ? "No multiplier" : "Multiplier query timeout");
+    return false;
+  }
+
+  if (RGA_ELECTRON_MULTIPLIER_MAX_TP_A > 0.0f) {
+    float totalPressureA = rga.totalPressure(RGA_TOTAL_PRESSURE_TIMEOUT_MS);
+    if (totalPressureA != totalPressureA) {
+      sendErr("EMON", "TP timeout");
+      return false;
+    }
+    if (totalPressureA > RGA_ELECTRON_MULTIPLIER_MAX_TP_A) {
+      sendErr("EMON", "TP too high");
+      return false;
+    }
+  }
+
+  if (!rga.turnElectronMultiplierOn(RGA_ELECTRON_MULTIPLIER_BIAS_V,
+                                    RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS)) {
+    sendErr("EMON", "HV command failed");
+    return false;
+  }
+
+  return true;
+}
+
+bool turnElectronMultiplierOff() {
+  if (systemState == SystemState::Acquiring) {
+    sendErr("EMOFF", "RGA acquiring");
+    return false;
+  }
+
+  if (!rga.turnElectronMultiplierOff(RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS)) {
+    sendErr("EMOFF", "HV command failed");
+    return false;
+  }
+
+  return true;
 }
 
 void sendResponse(const char *response) {
@@ -1175,6 +1247,12 @@ bool startRGA(bool startAcquisition)
   }
 
   Serial.println("RGA ready!");
+
+  if (RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP && !turnElectronMultiplierOn()) {
+    Serial.println("RGA electron multiplier failed to start");
+    setSystemState(SystemState::Error);
+    return false;
+  }
 
   setSystemState(startAcquisition ? SystemState::Acquiring : SystemState::RgaReady);
   StatusMsg(12);
