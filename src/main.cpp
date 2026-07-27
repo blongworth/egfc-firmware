@@ -186,6 +186,7 @@ void setSystemState(SystemState state);
 bool beginTransition(const char *command);
 void clearTransition();
 void stopAcquisition();
+void finishPendingRgaScanBeforeStop();
 bool stopRgaOnly();
 void stopTurboOnly();
 bool isCommand(const char *command, const char *modern, const char *legacy);
@@ -914,9 +915,34 @@ void clearTransition() {
 }
 
 void stopAcquisition() {
+  finishPendingRgaScanBeforeStop();
   if (systemState == SystemState::Acquiring) {
     setSystemState(SystemState::RgaReady);
   }
+}
+
+void finishPendingRgaScanBeforeStop() {
+  if (rgaAcquisitionState != RgaAcquisitionState::WaitForScan) {
+    return;
+  }
+
+  Serial.print("Waiting for pending RGA mass before stopping: ");
+  Serial.println(activeRgaMass);
+
+  while (!rga.scanDataAvailable() && rgaScanTimer < RGA_SCAN_TIMEOUT_MS) {
+    delay(1);
+  }
+
+  if (rga.scanDataAvailable()) {
+    int current = rga.readScan();
+    logRgaMeasurement(activeRgaMass, current);
+  } else {
+    Serial.print("RGA scan timeout before stop for mass ");
+    Serial.println(activeRgaMass);
+    rga.flushInput();
+  }
+
+  rgaAcquisitionState = RgaAcquisitionState::Idle;
 }
 
 bool stopRgaOnly() {
