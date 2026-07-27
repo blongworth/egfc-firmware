@@ -18,6 +18,7 @@ public:
   bool clearElectrometer(unsigned long timeoutMs);
   bool calibrateAll(unsigned long timeoutMs);
   bool prepareForMeasurements(int noiseFloor, unsigned long timeoutMs);
+  float totalPressure(unsigned long timeoutMs);
 
   void setNoiseFloor(int noiseFloor);
   void startScan(int mass);

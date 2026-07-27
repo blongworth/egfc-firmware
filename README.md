@@ -61,6 +61,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | --- | --- |
 | `?` | Query current readable status. |
 | `TSTAT` | Query detailed turbopump status. |
+| `TP` | Query RGA total pressure ion current in amps. Rejected while RGA mass acquisition is active. |
 | `PSTAT` | Query pump PWM/RPM status. |
 | `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `TON` | Start turbopump only. |
@@ -93,6 +94,7 @@ Status responses use:
 ```text
 S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
 TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>
+TP,<total_pressure_current_A>
 PS,PWM=<duty_percent>,RPM=<rpm>
 ```
 
@@ -116,6 +118,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | --- | --- | --- |
 | `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
 | `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>` | Detailed turbopump status response. |
+| `TP,` | `TP,<total_pressure_current_A>` | RGA total pressure ion current response from the RGA `TP?` command. |
 | `PS,` | `PS,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
 | `V:` | `V:<timestamp>,<event>,CHAMBER=<state>,FLUSH=<state>` | Valve change event. Also written to the SD data file. |
 | `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
@@ -124,7 +127,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | `ACK,` | `ACK,<command>` | Transition command accepted. |
 | `DONE,` | `DONE,<command>` | Transition command reached its target state. |
 | `ERR,` | `ERR,<command>,<message>` | Command rejected. |
-| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. |
+| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. For payload `3`, the row is `!:<timestamp>,<turbo_error>,<turbo_speed_Hz>,<turbo_power_W>,<turbo_voltage>,<turbo_electronics_temp_C>,<turbo_bottom_temp_C>,<turbo_motor_temp_C>,<rga_filament>,<total_pressure_current_A>`. |
 | `R:` | `R:<timestamp>,<mass>,<current>` | One RGA mass reading. Also written to the SD data file. |
 
 Timestamps are ISO-8601-style UTC strings from the Teensy RTC, for example:
@@ -139,7 +142,7 @@ Simple status events use a numeric payload, for example:
 !:2026-06-02T14:30:00Z,5
 ```
 
-Detailed status rows are sent when `StatusMsg(3)` runs. In serial builds, the payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, and RGA filament status.
+Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, RGA filament status, and RGA total pressure ion current.
 
 ## Running the System
 

@@ -148,6 +148,29 @@ bool RGADevice::prepareForMeasurements(int noiseFloor, unsigned long timeoutMs)
   return calibrateAll(timeoutMs);
 }
 
+float RGADevice::totalPressure(unsigned long timeoutMs)
+{
+  flushInput();
+  write("TP?\r");
+
+  elapsedMillis timer;
+  while (serial.available() < 4 && timer < timeoutMs) {
+  }
+
+  if (serial.available() < 4) {
+    return NAN;
+  }
+
+  uint8_t response[4];
+  serial.readBytes(response, sizeof(response));
+  int32_t current = static_cast<int32_t>(response[0]) |
+                    (static_cast<int32_t>(response[1]) << 8) |
+                    (static_cast<int32_t>(response[2]) << 16) |
+                    (static_cast<int32_t>(response[3]) << 24);
+
+  return static_cast<float>(current) * 1.0e-16f;
+}
+
 float RGADevice::readStatus(const char *command, int start, int end)
 {
   serial.write(command);

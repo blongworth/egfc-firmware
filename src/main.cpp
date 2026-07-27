@@ -147,6 +147,7 @@ const unsigned long TURBO_STARTUP_POLL_MS = 1000;
 const unsigned long TURBO_READY_BEFORE_RGA_MS = 300000;
 const unsigned long RGA_STARTUP_TIMEOUT_MS = 60000;
 const unsigned long RGA_SCAN_TIMEOUT_MS = 3000;
+const unsigned long RGA_TOTAL_PRESSURE_TIMEOUT_MS = 3000;
 elapsedMillis turboReadyTimer;
 
 enum class RgaAcquisitionState {
@@ -180,6 +181,7 @@ void sendErr(const char *command, const char *message);
 void sendStatus();
 void sendTurboStatus();
 void sendPumpStatus();
+void sendRgaTotalPressure();
 void sendResponse(const char *response);
 const char *systemStateName(SystemState state);
 void setSystemState(SystemState state);
@@ -642,6 +644,15 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "TP") == 0) {
+    if (systemState == SystemState::Acquiring) {
+      sendErr("TP", "RGA acquiring");
+      return;
+    }
+    sendRgaTotalPressure();
+    return;
+  }
+
   if (strcmp(command, "PSTAT") == 0) {
     sendPumpStatus();
     return;
@@ -867,6 +878,18 @@ void sendPumpStatus() {
   snprintf(response, sizeof(response), "PS,PWM=%.1f,RPM=%.1f",
            pump.dutyCycle(),
            pump.rpm());
+  sendResponse(response);
+}
+
+void sendRgaTotalPressure() {
+  float totalPressureA = rga.totalPressure(RGA_TOTAL_PRESSURE_TIMEOUT_MS);
+  if (totalPressureA != totalPressureA) {
+    sendErr("TP", "Timeout");
+    return;
+  }
+
+  char response[40];
+  snprintf(response, sizeof(response), "TP,%.6e", totalPressureA);
   sendResponse(response);
 }
 
@@ -1184,6 +1207,11 @@ void StatusMsg(int M) {
     float SRS = rga.filamentStatus();
     Udp.print(",");
     Udp.print(SRS);
+    float totalPressureA = rga.totalPressure(RGA_TOTAL_PRESSURE_TIMEOUT_MS);
+    char totalPressureText[16];
+    snprintf(totalPressureText, sizeof(totalPressureText), "%.6e", totalPressureA);
+    Udp.print(",");
+    Udp.print(totalPressureText);
   }
   else {
     Udp.print(M);
@@ -1214,7 +1242,13 @@ void StatusMsg(int M) {
     Serial.print(",");
     Serial.print(turboStatus.motorTemp);
     float SRS = rga.filamentStatus();
+    Serial.print(",");
     Serial.print(SRS);
+    float totalPressureA = rga.totalPressure(RGA_TOTAL_PRESSURE_TIMEOUT_MS);
+    char totalPressureText[16];
+    snprintf(totalPressureText, sizeof(totalPressureText), "%.6e", totalPressureA);
+    Serial.print(",");
+    Serial.print(totalPressureText);
   }
   else {
     Serial.print(M);
