@@ -8,6 +8,7 @@
 #include <SD.h>
 #include <TimeLib.h>
 
+#include "Config.h"
 #include "RGA.h"
 #include "SCALUP.h"
 #include "PwmRpm.h"
@@ -19,54 +20,12 @@
 #include <NativeEthernetUdp.h>
 #endif
 
-#define LED_PIN 13
-
-// noise floor to use for measurements
-const byte NOISE_FLOOR = 2;
-
-// AMU's to measure
-const byte AMUS[] = {
-  2,
-  15,
-  16,
-  18,
-  28,
-  30,
-  32,
-  33,
-  34,
-  40,
-  44
-};
-const byte NUM_AMUS = 11;
-
 char FileName[32];
 File dataFile;
 bool file_created = false;
 TurboPump turbo;
 RGADevice rga(Serial4);
 SCALUPDevice scalup(Serial3);
-
-const uint8_t CHAMBER_VALVE_PIN_A = 2;
-const uint8_t CHAMBER_VALVE_PIN_B = 3;
-const uint8_t VALVE_SLEEP_PIN = 4;
-const uint8_t FLUSH_VALVE_PIN_A = 5;
-const uint8_t FLUSH_VALVE_PIN_B = 6;
-const unsigned long VALVE_MOVE_TIME_MS = 10000;
-const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MS = 20000;
-const unsigned long VALVE_EXPERIMENT_INTERVAL_MS = 60000;
-const unsigned long FLUSH_INTERVAL_MS = 30000;
-const float OXYGEN_MIN_MG_L = 2.0f;
-const float OXYGEN_MAX_MG_L = 12.0f;
-const uint32_t SCALUP_BAUD = 28800;
-const uint8_t PUMP_PWM_PIN = 7;
-const uint8_t PUMP_RPM_PIN = 8;
-const unsigned long PUMP_LOG_INTERVAL_MS = 10000;
-
-const PwmRpm::Config PUMP_CONFIG = {
-  PUMP_PWM_PIN,
-  PUMP_RPM_PIN
-};
 
 DualValveController valves(VALVE_SLEEP_PIN,
                            CHAMBER_VALVE_PIN_A,
@@ -91,20 +50,30 @@ elapsedMillis pumpLogTimer;
 
 #ifdef USE_ETHERNET
 // Set up ethernet
-byte mac[] = { 0x04, 0xE9, 0xE5, 0x0B, 0xFC, 0xCD };
-IPAddress myIP(111, 111, 111, 111);
-IPAddress destinationIP(111, 111, 111, 222);
-unsigned int          myPort = 8000;
-unsigned int destinationPort = 8002;
+byte mac[] = {
+  ETHERNET_MAC_ADDRESS[0],
+  ETHERNET_MAC_ADDRESS[1],
+  ETHERNET_MAC_ADDRESS[2],
+  ETHERNET_MAC_ADDRESS[3],
+  ETHERNET_MAC_ADDRESS[4],
+  ETHERNET_MAC_ADDRESS[5]
+};
+IPAddress myIP(ETHERNET_LOCAL_IP[0],
+               ETHERNET_LOCAL_IP[1],
+               ETHERNET_LOCAL_IP[2],
+               ETHERNET_LOCAL_IP[3]);
+IPAddress destinationIP(ETHERNET_DESTINATION_IP[0],
+                        ETHERNET_DESTINATION_IP[1],
+                        ETHERNET_DESTINATION_IP[2],
+                        ETHERNET_DESTINATION_IP[3]);
+unsigned int myPort = ETHERNET_LOCAL_PORT;
+unsigned int destinationPort = ETHERNET_DESTINATION_PORT;
 EthernetUDP Udp;
 #endif
 
-const int chipSelect = BUILTIN_SDCARD;
-
-const int BUFFER_SIZE = 100;
-char SrfMsg[BUFFER_SIZE];
+char SrfMsg[SURFACE_COMMAND_BUFFER_SIZE];
 int Turbo;
-int TB_Spd = 1200;
+int TB_Spd = TURBO_DEFAULT_SPEED_HZ;
 unsigned long Timer;
 int turbo_bad_ctr = 0;
 elapsedMillis turbo_bad_timer;
@@ -139,19 +108,9 @@ enum class TurboStartupState {
 TurboStartupState turboStartupState = TurboStartupState::Idle;
 elapsedMillis turboStartupTimer;
 elapsedMillis turboStartupPollTimer;
-int turboStartupTargetSpeed = 1200;
+int turboStartupTargetSpeed = TURBO_DEFAULT_SPEED_HZ;
 bool turboStartupStartRgaWhenReady = false;
 bool turboStartupAcquireWhenRgaReady = false;
-const unsigned long TURBO_STARTUP_TIMEOUT_MS = 300000;
-const unsigned long TURBO_STARTUP_POLL_MS = 1000;
-const unsigned long TURBO_READY_BEFORE_RGA_MS = 300000;
-const unsigned long RGA_STARTUP_TIMEOUT_MS = 60000;
-const unsigned long RGA_SCAN_TIMEOUT_MS = 3000;
-const unsigned long RGA_TOTAL_PRESSURE_TIMEOUT_MS = 3000;
-const unsigned long RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS = 3000;
-const int RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400;
-const bool RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false;
-const float RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0f;
 elapsedMillis turboReadyTimer;
 
 enum class RgaAcquisitionState {
@@ -229,7 +188,7 @@ void setup() {
 
   Serial.printf("\n\nGEMS Lander %s \n", compileTime);
 
-  rga.begin(28800, SERIAL_8N1);
+  rga.begin(RGA_BAUD, SERIAL_8N1);
   scalup.begin(SCALUP_BAUD);
 
   pinMode(LED_PIN, OUTPUT);
@@ -265,7 +224,7 @@ void setup() {
 
   // see if the card is present and can be initialized:
   Serial.println("Initializing SD card...");
-  if (!SD.begin(chipSelect)) {
+  if (!SD.begin(SD_CHIP_SELECT)) {
     Serial.println("Card failed, or not present");
   }
   else {
@@ -295,7 +254,7 @@ void setup() {
   {
     if (Udp.parsePacket())
     {
-      Udp.readBytesUntil('\r', SrfMsg, BUFFER_SIZE);
+      Udp.readBytesUntil('\r', SrfMsg, SURFACE_COMMAND_BUFFER_SIZE);
       if (SrfMsg[0] == 'T')
       {
         unsigned long unix_time = strtoul(SrfMsg + 1, NULL, 10);
@@ -348,9 +307,9 @@ void loop() {
 
   if (packetSize) {
 #ifdef USE_ETHERNET
-    size_t msgLen = Udp.readBytesUntil('\r', SrfMsg, BUFFER_SIZE - 1);
+    size_t msgLen = Udp.readBytesUntil('\r', SrfMsg, SURFACE_COMMAND_BUFFER_SIZE - 1);
 #else
-    size_t msgLen = Serial.readBytesUntil('\r', SrfMsg, BUFFER_SIZE - 1);
+    size_t msgLen = Serial.readBytesUntil('\r', SrfMsg, SURFACE_COMMAND_BUFFER_SIZE - 1);
 #endif
     SrfMsg[msgLen] = '\0';
     handleCommand(SrfMsg);
@@ -1240,7 +1199,7 @@ bool startRGA(bool startAcquisition)
   StatusMsg(4);
   StatusMsg(11);
 
-  if (!rga.prepareForMeasurements(NOISE_FLOOR, RGA_STARTUP_TIMEOUT_MS)) {
+  if (!rga.prepareForMeasurements(RGA_NOISE_FLOOR, RGA_STARTUP_TIMEOUT_MS)) {
     Serial.println("RGA failed to start");
     setSystemState(SystemState::Error);
     return false;
@@ -1387,12 +1346,12 @@ void updateRgaAcquisition() {
 }
 
 void startNextRgaScan() {
-  if (rgaMassIndex >= NUM_AMUS) {
+  if (rgaMassIndex >= RGA_NUM_MASSES) {
     StatusMsg(3);
     rgaMassIndex = 0;
   }
 
-  activeRgaMass = AMUS[rgaMassIndex];
+  activeRgaMass = RGA_MASSES[rgaMassIndex];
   Serial.print("Measuring mass: ");
   Serial.println(activeRgaMass);
   rga.startScanNonBlocking(activeRgaMass);

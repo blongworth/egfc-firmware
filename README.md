@@ -16,6 +16,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 ## Project Layout
 
 - `src/main.cpp`: main setup, loop, surface command handling, run/stop sequencing, SD logging, status messages, and experiment coordination.
+- `src/Config.h`: user-tunable hardware pins, serial settings, timing values, thresholds, and network settings.
 - `src/RGA.cpp` and `src/RGA.h`: RGA serial module with status, noise-floor, and mass-scan helpers.
 - `src/SCALUP.cpp` and `src/SCALUP.h`: SCALUP sonde serial parser with the most recent parsed reading.
 - `src/PwmRpm.cpp` and `src/PwmRpm.h`: PWM output and RPM pulse-count readback helper.
@@ -27,6 +28,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 
 - Board: Teensy 4.1
 - Debug/surface serial: `Serial` at `9600`
+- Main firmware configuration is in `src/Config.h`
 - RGA serial: `Serial4` at `28800`, `SERIAL_8N1`
 - SCALUP serial: `Serial3` at `28800`, `SERIAL_8N1`
 - Turbopump serial: USB host serial at `9600`
