@@ -155,7 +155,7 @@ void clearTransition();
 void stopAcquisition();
 void finishPendingRgaScanBeforeStop();
 bool stopRgaOnly();
-void stopTurboOnly();
+bool stopTurboOnly();
 bool isCommand(const char *command, const char *modern, const char *legacy);
 void printDigits(int digits);
 void updateRgaAcquisition();
@@ -670,12 +670,10 @@ void handleCommand(char *command) {
   }
 
   if (strcmp(command, "TOFF") == 0) {
-    stopAcquisition();
-    if (rga.filamentStatus() > 0.01) {
-      sendErr("TOFF", "RGA is on");
+    if (!stopTurboOnly()) {
+      sendErr("TOFF", "RGA filament did not confirm off");
       return;
     }
-    stopTurboOnly();
     sendOk("TOFF");
     return;
   }
@@ -1008,11 +1006,16 @@ bool stopRgaOnly() {
   return true;
 }
 
-void stopTurboOnly() {
+bool stopTurboOnly() {
   stopAcquisition();
+  if (!rga.ensureFilamentOff(10, 5000)) {
+    Serial.println("RGA filament did not confirm off; turbo stop skipped");
+    return false;
+  }
   turboStartupState = TurboStartupState::Idle;
   turbo.stop();
   setSystemState(SystemState::Off);
+  return true;
 }
 
 bool isCommand(const char *command, const char *modern, const char *legacy) {
