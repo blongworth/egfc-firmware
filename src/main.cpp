@@ -49,6 +49,7 @@ elapsedMillis valveExperimentTimer;
 elapsedMillis chamberValveTimer;
 elapsedMillis flushTimer;
 elapsedMillis valvePreflushTimer;
+bool valvePreflushEnabled = true;
 bool valvePreflushActive = false;
 bool preflushNextChamber = true;
 
@@ -447,6 +448,7 @@ void updateValveExperiment() {
     return;
   }
 
+  valvePreflushEnabled = false;
   valvePreflushActive = false;
 
   if (valves.isMoving()) {
@@ -516,7 +518,7 @@ void startValveFlush() {
 }
 
 void updateValvePreflush() {
-  if (!PUMP_ON_AT_STARTUP || !pumpEnabled) {
+  if (!valvePreflushEnabled || !PUMP_ON_AT_STARTUP || !pumpEnabled) {
     valvePreflushActive = false;
     return;
   }
