@@ -9,6 +9,7 @@
 #include <TimeLib.h>
 
 #include "Config.h"
+#include "ConfigFile.h"
 #include "RGA.h"
 #include "SCALUP.h"
 #include "PwmRpm.h"
@@ -23,6 +24,7 @@
 char FileName[32];
 File dataFile;
 bool file_created = false;
+RuntimeConfig runtimeConfig;
 TurboPump turbo;
 RGADevice rga(Serial4);
 SCALUPDevice scalup(Serial3);
@@ -210,10 +212,22 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
 
+  // see if the card is present and can be initialized:
+  Serial.println("Initializing SD card...");
+  if (!SD.begin(SD_CHIP_SELECT)) {
+    Serial.println("Card failed, or not present");
+  }
+  else {
+    Serial.println("card initialized.");
+    loadRuntimeConfig(CONFIG_FILE_PATH, runtimeConfig, Serial);
+  }
+
+  TB_Spd = TURBO_DEFAULT_SPEED_HZ;
+
   valves.begin();
   if (!pump.begin()) {
     Serial.println("Pump PWM/RPM initialization failed");
-  } else if (PUMP_ON_AT_STARTUP) {
+  } else if (runtimeConfig.PUMP_ON_AT_STARTUP) {
     turnPumpOn();
   } else {
     turnPumpOff();
@@ -241,15 +255,6 @@ void setup() {
     Serial.println(rgaFilamentOffStatus, BIN);
   } else {
     Serial.println("RGA initialization failed");
-  }
-
-  // see if the card is present and can be initialized:
-  Serial.println("Initializing SD card...");
-  if (!SD.begin(SD_CHIP_SELECT)) {
-    Serial.println("Card failed, or not present");
-  }
-  else {
-    Serial.println("card initialized.");
   }
 
 #ifdef USE_ETHERNET
@@ -313,7 +318,7 @@ void setup() {
 
   Serial.println("Surface ready");
 
-  if (AUTOSTART_ON_BOOT) {
+  if (runtimeConfig.AUTOSTART_ON_BOOT) {
     autostartPending = true;
   }
 }
@@ -465,15 +470,15 @@ void updateValveExperiment() {
       return;
 
     case ValveExperimentState::Running:
-      if (chamberValveTimer >= CHAMBER_VALVE_TOGGLE_INTERVAL_MS) {
+      if (chamberValveTimer >= runtimeConfig.CHAMBER_VALVE_TOGGLE_INTERVAL_MS) {
         chamberValveTimer = 0;
         valves.toggleChamber();
         logValveChange("CHAMBER_TOGGLE");
         return;
       }
 
-      if (valveExperimentTimer >= MAX_EXPERIMENT_INTERVAL_MS ||
-          (valveExperimentTimer >= MIN_EXPERIMENT_INTERVAL_MS && oxygenOutsideRange())) {
+      if (valveExperimentTimer >= runtimeConfig.MAX_EXPERIMENT_INTERVAL_MS ||
+          (valveExperimentTimer >= runtimeConfig.MIN_EXPERIMENT_INTERVAL_MS && oxygenOutsideRange())) {
         startValveFlush();
         return;
       }
@@ -516,7 +521,7 @@ void startValveFlush() {
 }
 
 void updateValvePreflush() {
-  if (!PUMP_ON_AT_STARTUP || !pumpEnabled) {
+  if (!runtimeConfig.PUMP_ON_AT_STARTUP || !pumpEnabled) {
     valvePreflushActive = false;
     return;
   }
@@ -619,7 +624,7 @@ bool oxygenOutsideRange() {
   }
 
   float oxygenMgL = scalup.latest().doMgL;
-  return oxygenMgL < OXYGEN_MIN_MG_L || oxygenMgL > OXYGEN_MAX_MG_L;
+  return oxygenMgL < runtimeConfig.OXYGEN_MIN_MG_L || oxygenMgL > runtimeConfig.OXYGEN_MAX_MG_L;
 }
 
 void handleCommand(char *command) {
@@ -1081,7 +1086,7 @@ void updateAutostart() {
 }
 
 void beginAcquisitionStartDelay(bool resetTimer) {
-  if (RGA_READY_BEFORE_ACQUISITION_MS == 0) {
+  if (runtimeConfig.RGA_READY_BEFORE_ACQUISITION_MS == 0) {
     acquisitionStartPending = false;
     setSystemState(SystemState::Acquiring);
     return;
@@ -1104,7 +1109,7 @@ void updateAcquisitionStartDelay() {
     return;
   }
 
-  if (acquisitionStartTimer < RGA_READY_BEFORE_ACQUISITION_MS) {
+  if (acquisitionStartTimer < runtimeConfig.RGA_READY_BEFORE_ACQUISITION_MS) {
     return;
   }
 
@@ -1269,7 +1274,7 @@ void updateTurboStartup() {
         StatusMsg(3);
         Turbo = turbo.isReady(turboStartupTargetSpeed);
         if (Turbo == 1) {
-          if (turboStartupStartRgaWhenReady && TURBO_READY_BEFORE_RGA_MS > 0) {
+          if (turboStartupStartRgaWhenReady && runtimeConfig.TURBO_READY_BEFORE_RGA_MS > 0) {
             Serial.println("Turbo ready, waiting before RGA start");
             turboReadyTimer = 0;
             turboStartupState = TurboStartupState::WaitReadyDwell;
@@ -1299,7 +1304,7 @@ void updateTurboStartup() {
         }
       }
 
-      if (turboReadyTimer >= TURBO_READY_BEFORE_RGA_MS) {
+      if (turboReadyTimer >= runtimeConfig.TURBO_READY_BEFORE_RGA_MS) {
         turboStartupState = TurboStartupState::Ready;
       }
       return;
@@ -1553,12 +1558,12 @@ void updateRgaAcquisition() {
 }
 
 void startNextRgaScan() {
-  if (rgaMassIndex >= RGA_NUM_MASSES) {
+  if (rgaMassIndex >= runtimeConfig.RGA_NUM_MASSES) {
     StatusMsg(3);
     rgaMassIndex = 0;
   }
 
-  activeRgaMass = RGA_MASSES[rgaMassIndex];
+  activeRgaMass = runtimeConfig.RGA_MASSES[rgaMassIndex];
   Serial.print("Measuring mass: ");
   Serial.println(activeRgaMass);
   rga.startScanNonBlocking(activeRgaMass);

@@ -30,13 +30,14 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Debug/surface serial: `Serial` at `9600`
 - Main firmware configuration is in `src/Config.h`
 - Loop-rate logging is disabled by default with `ENABLE_LOOP_RATE_LOG = 0`; set it to `1` to print loop frequency once per second.
-- Full-system autostart is disabled by default with `AUTOSTART_ON_BOOT = false`; it starts the normal `RUN` sequence immediately after boot setup completes.
+- Runtime settings can be overridden from `/egfc.cfg` on the SD card. See the example `egfc.cfg` in this repo.
+- Full-system autostart is controlled by `AUTOSTART_ON_BOOT`; it starts the normal `RUN` sequence immediately after boot setup completes.
 - RGA serial: `Serial4` at `28800`, `SERIAL_8N1`
 - SCALUP serial: `Serial3` at `28800`, `SERIAL_8N1`
 - Turbopump serial: USB host serial at `9600`
 - SD card: `BUILTIN_SDCARD`
 - Default turbopump speed: `1200 Hz`
-- Pump PWM output: pin `7`, default duty `100%`, startup disabled with `PUMP_ON_AT_STARTUP = false`, default PWM frequency `20000 Hz`, 8-bit resolution
+- Pump PWM output: pin `7`, default duty `100%`, startup controlled by `PUMP_ON_AT_STARTUP`, default PWM frequency `20000 Hz`, 8-bit resolution
 - Pump RPM readback: pin `8`, `INPUT_PULLUP`, rising-edge interrupt, 1 pulse/rev, 1 second RPM calculation interval
 - Pump RPM is included in the detailed `!:` status row.
 - RGA noise floor: `2`
@@ -44,7 +45,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - RGA electron multiplier command bias: `1400 V` (`HV1400`); off command uses `HV0`
 - RGA electron multiplier at startup: disabled by default with `RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false`
 - RGA electron multiplier total pressure limit: disabled by default with `RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0`; set a positive ion-current threshold in amps to require `TP?` below that value before enabling the multiplier
-- RGA-ready dwell before acquisition is disabled by default with `RGA_READY_BEFORE_ACQUISITION_MS = 0`.
+- RGA-ready dwell before acquisition is controlled by `RGA_READY_BEFORE_ACQUISITION_MS`.
 - Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
 - Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`.
 - Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `20000 ms`, minimum experiment interval before oxygen checks `30000 ms`, maximum experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
@@ -60,6 +61,12 @@ pio run -e teensy41
 pio run -e teensy41 -t upload
 pio device monitor
 ```
+
+## SD Config
+
+On boot, the firmware loads `/egfc.cfg` from the SD card if present. Missing files, unknown keys, and invalid values are reported as `CFG,` messages on the console. If the file is missing or a value is invalid, the firmware keeps the compiled defaults from `src/Config.h`.
+
+The config file uses `KEY=VALUE` lines. Comments start with `#`. The example [egfc.cfg](egfc.cfg) contains all currently supported runtime keys.
 
 ## Commands
 
