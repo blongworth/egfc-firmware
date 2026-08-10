@@ -26,7 +26,7 @@ size_t RGADevice::write(const char *command)
   return serial.write(command);
 }
 
-bool RGADevice::initialize(int *initialStatusByte, int *filamentOffStatusByte)
+bool RGADevice::initialize(int *initialStatusByte, int *filamentOffStatusByte, unsigned long timeoutMs)
 {
   flushInput();
   write("\r");
@@ -34,7 +34,7 @@ bool RGADevice::initialize(int *initialStatusByte, int *filamentOffStatusByte)
   write("\r");
   delay(100);
   write("IN0\r");
-  if (!waitForStatusByte(0)) {
+  if (!waitForStatusByte(timeoutMs)) {
     return false;
   }
   if (initialStatusByte) {
@@ -46,7 +46,7 @@ bool RGADevice::initialize(int *initialStatusByte, int *filamentOffStatusByte)
   delay(100);
   flushInput();
   write("FL0\r");
-  if (!waitForStatusByte(0)) {
+  if (!waitForStatusByte(timeoutMs)) {
     return false;
   }
 

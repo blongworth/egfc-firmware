@@ -7,7 +7,7 @@ public:
   explicit RGADevice(HardwareSerial &serial);
 
   void begin(uint32_t baud, uint16_t config);
-  bool initialize(int *initialStatusByte, int *filamentOffStatusByte);
+  bool initialize(int *initialStatusByte, int *filamentOffStatusByte, unsigned long timeoutMs);
   void flushInput();
 
   bool waitForStatusByte(unsigned long timeoutMs);
