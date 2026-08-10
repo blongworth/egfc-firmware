@@ -10,6 +10,7 @@
 
 #include "Config.h"
 #include "RGA.h"
+#include "RuntimeConfig.h"
 #include "SCALUP.h"
 #include "PwmRpm.h"
 #include "Turbo.h"
@@ -36,6 +37,8 @@ DualValveController valves(VALVE_SLEEP_PIN,
 PwmRpm pump(PUMP_CONFIG);
 float pumpOnDutyPercent = PUMP_DEFAULT_PWM_DUTY_PERCENT;
 bool pumpEnabled = false;
+
+RuntimeConfig runtimeConfig;
 
 enum class ValveExperimentState {
   Idle,
@@ -166,6 +169,9 @@ void sendRgaErrorStatus();
 void clearRgaErrorStatus();
 bool turnElectronMultiplierOn();
 bool turnElectronMultiplierOff();
+bool handleConfigCommand(char *command);
+void sendConfigAll();
+void sendConfigValue(const char *key);
 void sendResponse(const char *response);
 const char *systemStateName(SystemState state);
 void setSystemState(SystemState state);
@@ -477,15 +483,15 @@ void updateValveExperiment() {
       return;
 
     case ValveExperimentState::Running:
-      if (chamberValveTimer >= CHAMBER_VALVE_TOGGLE_INTERVAL_MS) {
+      if (chamberValveTimer >= runtimeConfig.chamberValveToggleIntervalMs) {
         chamberValveTimer = 0;
         valves.toggleChamber();
         logValveChange("CHAMBER_TOGGLE");
         return;
       }
 
-      if (valveExperimentTimer >= MAX_EXPERIMENT_INTERVAL_MS ||
-          (valveExperimentTimer >= MIN_EXPERIMENT_INTERVAL_MS && oxygenOutsideRange())) {
+      if (valveExperimentTimer >= runtimeConfig.maxExperimentIntervalMs ||
+          (valveExperimentTimer >= runtimeConfig.minExperimentIntervalMs && oxygenOutsideRange())) {
         startValveFlush();
         return;
       }
@@ -667,7 +673,7 @@ bool oxygenOutsideRange() {
   }
 
   float oxygenMgL = scalup.latest().doMgL;
-  return oxygenMgL < OXYGEN_MIN_MG_L || oxygenMgL > OXYGEN_MAX_MG_L;
+  return oxygenMgL < runtimeConfig.oxygenMinMgL || oxygenMgL > runtimeConfig.oxygenMaxMgL;
 }
 
 void handleCommand(char *command) {
@@ -683,6 +689,13 @@ void handleCommand(char *command) {
 
   if (strcmp(command, "TSTAT") == 0) {
     sendTurboStatus();
+    return;
+  }
+
+  if (strncmp(command, "CFG", 3) == 0) {
+    if (!handleConfigCommand(command)) {
+      sendErr("CFG", "Invalid command");
+    }
     return;
   }
 
@@ -934,6 +947,83 @@ void trimCommand(char *command) {
   }
 }
 
+bool handleConfigCommand(char *command) {
+  if (strcmp(command, "CFG?") == 0) {
+    sendConfigAll();
+    return true;
+  }
+
+  if (strncmp(command, "CFG,", 4) != 0 || command[4] == '\0') {
+    return false;
+  }
+
+  char *setting = command + 4;
+  char *question = strchr(setting, '?');
+  if (question && question[1] == '\0') {
+    *question = '\0';
+    sendConfigValue(setting);
+    return true;
+  }
+
+  char *equals = strchr(setting, '=');
+  if (!equals || equals == setting || equals[1] == '\0') {
+    return false;
+  }
+
+  *equals = '\0';
+  const char *key = setting;
+  const char *value = equals + 1;
+
+  if (!runtimeConfig.isKnownKey(key)) {
+    sendErr("CFG", "unknown key");
+    return true;
+  }
+
+  if (!runtimeConfig.isCommandSettableKey(key)) {
+    sendErr("CFG", "read only");
+    return true;
+  }
+
+  if (systemState == SystemState::Acquiring ||
+      systemState == SystemState::AcquisitionStarting ||
+      activeTransitionCommand[0] != '\0') {
+    sendErr("CFG", "Busy");
+    return true;
+  }
+
+  const char *errorMessage = nullptr;
+  if (!runtimeConfig.setValue(key, value, &errorMessage)) {
+    sendErr("CFG", errorMessage ? errorMessage : "invalid value");
+    return true;
+  }
+
+  sendOk("CFG");
+  return true;
+}
+
+void sendConfigAll() {
+  sendConfigValue("AUTOSTART_ON_BOOT");
+  sendConfigValue("PUMP_ON_AT_STARTUP");
+  sendConfigValue("RGA_MASSES");
+  sendConfigValue("RGA_READY_BEFORE_ACQUISITION_MS");
+  sendConfigValue("TURBO_READY_BEFORE_RGA_MS");
+  sendConfigValue("CHAMBER_VALVE_TOGGLE_INTERVAL_MS");
+  sendConfigValue("MIN_EXPERIMENT_INTERVAL_MS");
+  sendConfigValue("MAX_EXPERIMENT_INTERVAL_MS");
+  sendConfigValue("OXYGEN_MIN_MG_L");
+  sendConfigValue("OXYGEN_MAX_MG_L");
+}
+
+void sendConfigValue(const char *key) {
+  char response[120];
+  if (!runtimeConfig.formatValue(key, response, sizeof(response))) {
+    sendErr("CFG", "unknown key");
+    return;
+  }
+
+  sendResponse(response);
+}
+
 void sendOk(const char *command) {
   char response[40];
   snprintf(response, sizeof(response), "OK,%s", command);
@@ -1149,7 +1239,7 @@ void updateAutostart() {
 }
 
 void beginAcquisitionStartDelay(bool resetTimer) {
-  if (RGA_READY_BEFORE_ACQUISITION_MS == 0) {
+  if (runtimeConfig.rgaReadyBeforeAcquisitionMs == 0) {
     acquisitionStartPending = false;
     setSystemState(SystemState::Acquiring);
     return;
@@ -1172,7 +1262,7 @@ void updateAcquisitionStartDelay() {
     return;
   }
 
-  if (acquisitionStartTimer < RGA_READY_BEFORE_ACQUISITION_MS) {
+  if (acquisitionStartTimer < runtimeConfig.rgaReadyBeforeAcquisitionMs) {
     return;
   }
 
@@ -1337,7 +1427,7 @@ void updateTurboStartup() {
         StatusMsg(3);
         Turbo = turbo.isReady(turboStartupTargetSpeed);
         if (Turbo == 1) {
-          if (turboStartupStartRgaWhenReady && TURBO_READY_BEFORE_RGA_MS > 0) {
+          if (turboStartupStartRgaWhenReady && runtimeConfig.turboReadyBeforeRgaMs > 0) {
             Serial.println("Turbo ready, waiting before RGA start");
             turboReadyTimer = 0;
             turboStartupState = TurboStartupState::WaitReadyDwell;
@@ -1367,7 +1457,7 @@ void updateTurboStartup() {
         }
       }
 
-      if (turboReadyTimer >= TURBO_READY_BEFORE_RGA_MS) {
+      if (turboReadyTimer >= runtimeConfig.turboReadyBeforeRgaMs) {
         turboStartupState = TurboStartupState::Ready;
       }
       return;
@@ -1621,12 +1711,12 @@ void updateRgaAcquisition() {
 }
 
 void startNextRgaScan() {
-  if (rgaMassIndex >= RGA_NUM_MASSES) {
+  if (rgaMassIndex >= runtimeConfig.rgaNumMasses) {
     StatusMsg(3);
     rgaMassIndex = 0;
   }
 
-  activeRgaMass = RGA_MASSES[rgaMassIndex];
+  activeRgaMass = runtimeConfig.rgaMasses[rgaMassIndex];
   Serial.print("Measuring mass: ");
   Serial.println(activeRgaMass);
   rga.startScanNonBlocking(activeRgaMass);

@@ -17,6 +17,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 
 - `src/main.cpp`: main setup, loop, surface command handling, run/stop sequencing, SD logging, status messages, and experiment coordination.
 - `src/Config.h`: user-tunable hardware pins, serial settings, timing values, thresholds, and network settings.
+- `src/RuntimeConfig.cpp` and `src/RuntimeConfig.h`: runtime config storage, command allowlist, parsing, and response formatting.
 - `src/RGA.cpp` and `src/RGA.h`: RGA serial module with status, noise-floor, and mass-scan helpers.
 - `src/SCALUP.cpp` and `src/SCALUP.h`: SCALUP sonde serial parser with the most recent parsed reading.
 - `src/PwmRpm.cpp` and `src/PwmRpm.h`: PWM output and RPM pulse-count readback helper.
@@ -44,7 +45,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - RGA electron multiplier command bias: `1400 V` (`HV1400`); off command uses `HV0`
 - RGA electron multiplier at startup: disabled by default with `RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false`
 - RGA electron multiplier total pressure limit: disabled by default with `RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0`; set a positive ion-current threshold in amps to require `TP?` below that value before enabling the multiplier
-- RGA-ready dwell before acquisition is disabled by default with `RGA_READY_BEFORE_ACQUISITION_MS = 0`.
+- RGA-ready dwell before acquisition is controlled by `RGA_READY_BEFORE_ACQUISITION_MS`.
 - Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
 - Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`.
 - Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `20000 ms`, minimum experiment interval before oxygen checks `30000 ms`, maximum experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
@@ -69,6 +70,9 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | --- | --- |
 | `?` | Query current readable status. |
 | `TSTAT` | Query detailed turbopump status. |
+| `CFG?` | Print all runtime settings. |
+| `CFG,<KEY>?` | Print one runtime setting. |
+| `CFG,<KEY>=<VALUE>` | Override an allowed runtime setting for the current power cycle. Rejected while acquiring, acquisition-starting, or busy. |
 | `TP` | Query raw RGA total pressure integer from `TP?`. Rejected while RGA mass acquisition is active. |
 | `ST` | Query RGA stored total-pressure sensitivity factor in `mA/Torr`. Rejected while RGA mass acquisition is active. |
 | `RERR` | Query the RGA STATUS error byte with `ER?`. Rejected while RGA mass acquisition is active. |
@@ -110,6 +114,7 @@ Status responses use:
 
 ```text
 S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
+CFG,<KEY>=<VALUE>
 TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current|NA>
 TP,<raw_total_pressure_current>
 ST,<total_pressure_sensitivity_mA_per_Torr>
@@ -122,6 +127,21 @@ Immediate commands return `OK,<command>` when complete. Transition commands retu
 Transition commands are `TON`, `RUN`, `RDY`, and `OFF`. `OFF` can interrupt another active transition. Other transition commands return `ERR,<command>,Busy` while a transition is active.
 
 Readable states are `Off`, `Turbo starting`, `Turbo ready`, `RGA starting`, `RGA ready`, `Acquisition starting`, `Acquiring`, `Stopping`, and `Error`.
+
+Serial `CFG` writes override the compiled `src/Config.h` defaults for the current power cycle only. Command-settable keys are:
+
+```text
+RGA_MASSES
+RGA_READY_BEFORE_ACQUISITION_MS
+TURBO_READY_BEFORE_RGA_MS
+CHAMBER_VALVE_TOGGLE_INTERVAL_MS
+MIN_EXPERIMENT_INTERVAL_MS
+MAX_EXPERIMENT_INTERVAL_MS
+OXYGEN_MIN_MG_L
+OXYGEN_MAX_MG_L
+```
+
+`AUTOSTART_ON_BOOT` and `PUMP_ON_AT_STARTUP` can be queried with `CFG,<KEY>?`, but are read-only over serial because they affect boot behavior.
 
 Data rows use:
 
@@ -136,6 +156,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | Prefix | Format | Meaning |
 | --- | --- | --- |
 | `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
+| `CFG,` | `CFG,<KEY>=<VALUE>` | Runtime config response. |
 | `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current|NA>` | Detailed turbopump/RGA status response. |
 | `TP,` | `TP,<raw_total_pressure_current>` | Raw 4-byte signed integer from the RGA `TP?` command. Multiply by `1e-16` for amps. |
 | `ST,` | `ST,<total_pressure_sensitivity_mA_per_Torr>` | RGA stored total-pressure sensitivity factor response from the RGA `ST?` command. |
