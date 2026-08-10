@@ -59,6 +59,8 @@ public:
   ValvePosition flushPosition() const;
   const char *chamberPositionName() const;
   const char *flushPositionName() const;
+  const char *chamberTerm() const;
+  const char *flushTerm() const;
   bool isMoving() const;
   bool isDriverEnabled() const;
 

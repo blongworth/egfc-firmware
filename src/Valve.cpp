@@ -195,6 +195,36 @@ const char *DualValveController::flushPositionName() const
   return valve2.positionName();
 }
 
+const char *DualValveController::chamberTerm() const
+{
+  switch (valve1.position()) {
+    case ValvePosition::PositionA:
+    case ValvePosition::MovingToA:
+      return "C1";
+    case ValvePosition::PositionB:
+    case ValvePosition::MovingToB:
+      return "C2";
+    case ValvePosition::Unknown:
+      return "Unknown";
+  }
+  return "Unknown";
+}
+
+const char *DualValveController::flushTerm() const
+{
+  switch (valve2.position()) {
+    case ValvePosition::PositionA:
+    case ValvePosition::MovingToA:
+      return "Fl";
+    case ValvePosition::PositionB:
+    case ValvePosition::MovingToB:
+      return "Re";
+    case ValvePosition::Unknown:
+      return "Unknown";
+  }
+  return "Unknown";
+}
+
 bool DualValveController::isMoving() const
 {
   return valve1.isMoving() || valve2.isMoving();

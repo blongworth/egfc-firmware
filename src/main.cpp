@@ -500,15 +500,15 @@ void startValveFlush() {
 }
 
 void logValveChange(const char *event) {
+  (void)event;
   char iso8601Time[25];
   getTimeISO8601(iso8601Time, sizeof(iso8601Time));
 
-  char valveRow[120];
-  snprintf(valveRow, sizeof(valveRow), "V:%s,%s,CHAMBER=%s,FLUSH=%s",
+  char valveRow[80];
+  snprintf(valveRow, sizeof(valveRow), "V:%s,%s,%s",
            iso8601Time,
-           event,
-           valves.chamberPositionName(),
-           valves.flushPositionName());
+           valves.chamberTerm(),
+           valves.flushTerm());
   Serial.println(valveRow);
 
   if (dataFile) {

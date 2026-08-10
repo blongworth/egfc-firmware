@@ -137,7 +137,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | `ST,` | `ST,<total_pressure_sensitivity_mA_per_Torr>` | RGA stored total-pressure sensitivity factor response from the RGA `ST?` command. |
 | `RE,` | `RE,STATUS=<status_byte>` | RGA error status response. |
 | `PS,` | `PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
-| `V:` | `V:<timestamp>,<event>,CHAMBER=<state>,FLUSH=<state>` | Valve change event. Also written to the SD data file. |
+| `V:` | `V:<timestamp>,<C1|C2>,<Re|Fl>` | Valve position after a change. Also written to the SD data file. |
 | `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
 | `PM:` | `PM:<timestamp>,<duty_percent>,<rpm>` | Pump status row every 10 seconds. Also written to the SD data file. |
 | `OK,` | `OK,<command>` | Immediate command completed. |
