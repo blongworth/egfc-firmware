@@ -30,6 +30,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Debug/surface serial: `Serial` at `9600`
 - Main firmware configuration is in `src/Config.h`
 - Loop-rate logging is disabled by default with `ENABLE_LOOP_RATE_LOG = 0`; set it to `1` to print loop frequency once per second.
+- Full-system autostart is disabled by default with `AUTOSTART_ON_BOOT = false`; it starts the normal `RUN` sequence immediately after boot setup completes.
 - RGA serial: `Serial4` at `28800`, `SERIAL_8N1`
 - SCALUP serial: `Serial3` at `28800`, `SERIAL_8N1`
 - Turbopump serial: USB host serial at `9600`
@@ -43,6 +44,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - RGA electron multiplier command bias: `1400 V` (`HV1400`); off command uses `HV0`
 - RGA electron multiplier at startup: disabled by default with `RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false`
 - RGA electron multiplier total pressure limit: disabled by default with `RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0`; set a positive ion-current threshold in amps to require `TP?` below that value before enabling the multiplier
+- RGA-ready dwell before acquisition is disabled by default with `RGA_READY_BEFORE_ACQUISITION_MS = 0`.
 - Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
 - Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`.
 - Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `20000 ms`, minimum experiment interval before oxygen checks `30000 ms`, maximum experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
@@ -81,7 +83,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `TOFF` | Stop acquisition, then stop turbo only if RGA is off. |
 | `RON` | Start RGA only if the turbopump is ready. |
 | `ROFF` | Stop acquisition and turn off the RGA filament, leaving turbo running if ready. |
-| `AON` | Start acquisition if RGA is ready. |
+| `AON` | Start acquisition immediately if RGA is ready. |
 | `AOFF` | Stop acquisition and leave RGA ready. |
 | `RUN` | Full start: turbopump, ready dwell, RGA, then acquisition. |
 | `RDY` | Full start to RGA ready, without acquisition. |
@@ -117,7 +119,7 @@ Immediate commands return `OK,<command>` when complete. Transition commands retu
 
 Transition commands are `TON`, `RUN`, `RDY`, and `OFF`. `OFF` can interrupt another active transition. Other transition commands return `ERR,<command>,Busy` while a transition is active.
 
-Readable states are `Off`, `Turbo starting`, `Turbo ready`, `RGA starting`, `RGA ready`, `Acquiring`, `Stopping`, and `Error`.
+Readable states are `Off`, `Turbo starting`, `Turbo ready`, `RGA starting`, `RGA ready`, `Acquisition starting`, `Acquiring`, `Stopping`, and `Error`.
 
 Data rows use:
 
@@ -170,8 +172,8 @@ Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes tur
 2. Power the system and open the serial monitor at `9600`.
 3. Confirm boot output shows RTC, RGA initialization, SD initialization, and `Surface ready`.
 4. If needed, set time with `TIME<unix>` (`T<unix>` is still accepted).
-5. Start the full measurement sequence with `RUN` (`!Z11` is still accepted).
-6. The firmware sets turbopump speed, starts the turbopump, checks for readiness, turns on the RGA filament, then begins mass scans.
+5. Start the full measurement sequence with `RUN` (`!Z11` is still accepted), or set `AUTOSTART_ON_BOOT = true` to start automatically after boot setup.
+6. The firmware sets turbopump speed, starts the turbopump, checks for readiness, turns on the RGA filament, waits `RGA_READY_BEFORE_ACQUISITION_MS`, then begins mass scans. This dwell applies to `RUN`, including boot autostart.
 7. If `PUMP_ON_AT_STARTUP` is true, preflush alternates staggered chamber and flush valve changes before acquisition starts.
 8. During acquisition, the valve experiment starts with flush recirculating and chamber A selected, toggles the chamber valve on the configured interval, then flushes chamber A and chamber B before starting the next experiment.
 9. RGA, SCALUP, valve, and pump rows are printed, written to SD, and sent over UDP if Ethernet is enabled.

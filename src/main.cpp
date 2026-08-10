@@ -89,6 +89,7 @@ enum class SystemState {
   TurboReady,
   RgaStarting,
   RgaReady,
+  AcquisitionStarting,
   Acquiring,
   Stopping,
   Error
@@ -98,6 +99,9 @@ SystemState systemState = SystemState::Off;
 bool fullStartRequested = false;
 bool stopRequested = false;
 char activeTransitionCommand[8] = "";
+bool autostartPending = false;
+bool acquisitionStartPending = false;
+elapsedMillis acquisitionStartTimer;
 
 enum class TurboStartupState {
   Idle,
@@ -138,6 +142,9 @@ void GEMS_Start(int TB_Spd3);
 void startTurboOnly(int TB_Spd3);
 void beginTurboStartup(int speedHz, bool startRgaWhenReady, bool acquireWhenRgaReady);
 void updateTurboStartup();
+void updateAutostart();
+void beginAcquisitionStartDelay(bool resetTimer);
+void updateAcquisitionStartDelay();
 bool GEMS_Stop();
 bool startRGA(bool startAcquisition);
 void StatusMsg(int M);
@@ -305,12 +312,17 @@ void setup() {
 #endif
 
   Serial.println("Surface ready");
+
+  if (AUTOSTART_ON_BOOT) {
+    autostartPending = true;
+  }
 }
 
 
 ////////////////////// Main Loop //////////////////////
 
 void loop() {
+  updateAutostart();
 
   // listen for surface message
 #ifdef USE_ETHERNET
@@ -368,6 +380,7 @@ void loop() {
   }
 
   updateRgaAcquisition();
+  updateAcquisitionStartDelay();
 
   updateValveExperiment();
 
@@ -707,6 +720,7 @@ void handleCommand(char *command) {
   }
 
   if (isCommand(command, "OFF", "!Z20") || strcmp(command, "!Z21") == 0 || strcmp(command, "!Z22") == 0) {
+    autostartPending = false;
     clearTransition();
     beginTransition("OFF");
     fullStartRequested = false;
@@ -758,7 +772,11 @@ void handleCommand(char *command) {
   }
 
   if (strcmp(command, "AON") == 0) {
-    if (systemState != SystemState::RgaReady && systemState != SystemState::Acquiring) {
+    if (systemState == SystemState::Acquiring) {
+      sendOk("AON");
+      return;
+    }
+    if (systemState != SystemState::RgaReady) {
       sendErr("AON", "RGA not ready");
       return;
     }
@@ -1047,6 +1065,55 @@ void sendResponse(const char *response) {
 #endif
 }
 
+void updateAutostart() {
+  if (!autostartPending) {
+    return;
+  }
+
+  autostartPending = false;
+  if (!beginTransition("RUN")) {
+    return;
+  }
+
+  setSystemState(SystemState::TurboStarting);
+  fullStartRequested = true;
+  sendAck("RUN");
+}
+
+void beginAcquisitionStartDelay(bool resetTimer) {
+  if (RGA_READY_BEFORE_ACQUISITION_MS == 0) {
+    acquisitionStartPending = false;
+    setSystemState(SystemState::Acquiring);
+    return;
+  }
+
+  acquisitionStartPending = true;
+  if (resetTimer) {
+    acquisitionStartTimer = 0;
+  }
+  setSystemState(SystemState::AcquisitionStarting);
+}
+
+void updateAcquisitionStartDelay() {
+  if (!acquisitionStartPending) {
+    return;
+  }
+
+  if (systemState != SystemState::AcquisitionStarting) {
+    acquisitionStartPending = false;
+    return;
+  }
+
+  if (acquisitionStartTimer < RGA_READY_BEFORE_ACQUISITION_MS) {
+    return;
+  }
+
+  acquisitionStartPending = false;
+  setSystemState(SystemState::Acquiring);
+  sendDone(activeTransitionCommand);
+  clearTransition();
+}
+
 const char *systemStateName(SystemState state) {
   switch (state) {
     case SystemState::Off: return "Off";
@@ -1054,6 +1121,7 @@ const char *systemStateName(SystemState state) {
     case SystemState::TurboReady: return "Turbo ready";
     case SystemState::RgaStarting: return "RGA starting";
     case SystemState::RgaReady: return "RGA ready";
+    case SystemState::AcquisitionStarting: return "Acquisition starting";
     case SystemState::Acquiring: return "Acquiring";
     case SystemState::Stopping: return "Stopping";
     case SystemState::Error: return "Error";
@@ -1065,6 +1133,9 @@ void setSystemState(SystemState state) {
   systemState = state;
   if (state != SystemState::Acquiring) {
     rgaAcquisitionState = RgaAcquisitionState::Idle;
+  }
+  if (state == SystemState::RgaReady) {
+    acquisitionStartTimer = 0;
   }
 }
 
@@ -1081,8 +1152,9 @@ void clearTransition() {
 }
 
 void stopAcquisition() {
+  acquisitionStartPending = false;
   finishPendingRgaScanBeforeStop();
-  if (systemState == SystemState::Acquiring) {
+  if (systemState == SystemState::Acquiring || systemState == SystemState::AcquisitionStarting) {
     setSystemState(SystemState::RgaReady);
   }
 }
@@ -1239,11 +1311,14 @@ void updateTurboStartup() {
       turboStartupState = TurboStartupState::Idle;
       if (turboStartupStartRgaWhenReady) {
         if (startRGA(turboStartupAcquireWhenRgaReady)) {
-          sendDone(activeTransitionCommand);
+          if (!acquisitionStartPending) {
+            sendDone(activeTransitionCommand);
+            clearTransition();
+          }
         } else {
           sendErr(activeTransitionCommand, "RGA failed to start");
+          clearTransition();
         }
-        clearTransition();
       } else {
         setSystemState(SystemState::TurboReady);
         sendDone(activeTransitionCommand);
@@ -1330,8 +1405,11 @@ bool startRGA(bool startAcquisition)
     return false;
   }
 
-  setSystemState(startAcquisition ? SystemState::Acquiring : SystemState::RgaReady);
+  setSystemState(SystemState::RgaReady);
   StatusMsg(12);
+  if (startAcquisition) {
+    beginAcquisitionStartDelay(true);
+  }
   return true;
 }
 

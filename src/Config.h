@@ -10,6 +10,7 @@ const uint8_t LED_PIN = 13;
 const int SD_CHIP_SELECT = BUILTIN_SDCARD;
 const int SURFACE_COMMAND_BUFFER_SIZE = 100;
 #define ENABLE_LOOP_RATE_LOG 0
+const bool AUTOSTART_ON_BOOT = true;
 
 // RGA serial, startup, mass scan, and detector settings.
 const uint32_t RGA_BAUD = 28800;
@@ -33,6 +34,8 @@ const unsigned long RGA_SCAN_TIMEOUT_MS = 3000;
 const unsigned long RGA_TOTAL_PRESSURE_TIMEOUT_MS = 3000;
 const unsigned long RGA_ERROR_TIMEOUT_MS = 3000;
 const unsigned long RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS = 3000;
+// how long to wait after RGA is ready before starting acquisition (auto mode)
+const unsigned long RGA_READY_BEFORE_ACQUISITION_MS = 300000;
 const int RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400;
 const bool RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false;
 const float RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0f;
@@ -41,6 +44,7 @@ const float RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0f;
 const int TURBO_DEFAULT_SPEED_HZ = 1200;
 const unsigned long TURBO_STARTUP_TIMEOUT_MS = 300000;
 const unsigned long TURBO_STARTUP_POLL_MS = 1000;
+// how long to pump before starting RGA
 const unsigned long TURBO_READY_BEFORE_RGA_MS = 300000;
 
 // Valve pins and experiment timing.
@@ -55,10 +59,10 @@ const unsigned long VALVE_MOVE_TIME_MS = 10000;
 // time to measure on each chamber
 const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MS = 20000;
 // time between staggered valve changes before acquisition starts
-const unsigned long PREFLUSH_VALVE_INTERVAL_MS = 20000;
+const unsigned long PREFLUSH_VALVE_INTERVAL_MS = 30000;
 // earliest time oxygen can trigger a flush
 const unsigned long MIN_EXPERIMENT_INTERVAL_MS = 30000;
-// latest time before a flush is forced
+// longest experiment before a flush is forced
 const unsigned long MAX_EXPERIMENT_INTERVAL_MS = 60000;
 // time to flush each chamber between experiments
 const unsigned long FLUSH_INTERVAL_MS = 30000;
@@ -69,13 +73,13 @@ const float OXYGEN_MAX_MG_L = 12.0f;
 
 // SCALUP sonde serial parser.
 const uint32_t SCALUP_BAUD = 28800;
-const bool SCALUP_ECHO_TO_CONSOLE = true;
+const bool SCALUP_ECHO_TO_CONSOLE = false;
 
 // Pump PWM output and tach readback.
 const uint8_t PUMP_PWM_PIN = 7;
 const uint8_t PUMP_RPM_PIN = 8;
 const float PUMP_DEFAULT_PWM_DUTY_PERCENT = 100.0f;
-const bool PUMP_ON_AT_STARTUP = false;
+const bool PUMP_ON_AT_STARTUP = true;
 const PwmRpm::Config PUMP_CONFIG = {
   PUMP_PWM_PIN,
   PUMP_RPM_PIN
