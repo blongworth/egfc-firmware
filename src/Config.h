@@ -53,8 +53,10 @@ const unsigned long VALVE_MOVE_TIME_MS = 10000;
 // experiment timing
 // time to measure on each chamber
 const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MS = 20000;
-// experiment duration
-const unsigned long VALVE_EXPERIMENT_INTERVAL_MS = 60000;
+// earliest time oxygen can trigger a flush
+const unsigned long MIN_EXPERIMENT_INTERVAL_MS = 30000;
+// latest time before a flush is forced
+const unsigned long MAX_EXPERIMENT_INTERVAL_MS = 60000;
 // time to flush each chamber between experiments
 const unsigned long FLUSH_INTERVAL_MS = 30000;
 

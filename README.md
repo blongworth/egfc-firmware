@@ -44,7 +44,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - RGA electron multiplier total pressure limit: disabled by default with `RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0`; set a positive ion-current threshold in amps to require `TP?` below that value before enabling the multiplier
 - Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
 - Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`.
-- Valve timing: move time `10000 ms`, chamber toggle interval `20000 ms`, experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
+- Valve timing: move time `10000 ms`, chamber toggle interval `20000 ms`, minimum experiment interval before oxygen checks `30000 ms`, maximum experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
 - Oxygen flush limits use the latest SCALUP dissolved oxygen reading: minimum `2.0 mg/L`, maximum `12.0 mg/L`.
 - SCALUP raw serial echo is currently enabled for debugging.
 

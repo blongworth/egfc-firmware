@@ -441,7 +441,8 @@ void updateValveExperiment() {
         return;
       }
 
-      if (valveExperimentTimer >= VALVE_EXPERIMENT_INTERVAL_MS || oxygenOutsideRange()) {
+      if (valveExperimentTimer >= MAX_EXPERIMENT_INTERVAL_MS ||
+          (valveExperimentTimer >= MIN_EXPERIMENT_INTERVAL_MS && oxygenOutsideRange())) {
         startValveFlush();
         return;
       }
