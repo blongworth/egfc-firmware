@@ -52,6 +52,8 @@ elapsedMillis valvePreflushTimer;
 bool valvePreflushEnabled = true;
 bool valvePreflushActive = false;
 bool preflushNextChamber = true;
+bool manualFlushActive = false;
+elapsedMillis manualFlushTimer;
 
 #ifdef USE_ETHERNET
 // Set up ethernet
@@ -185,6 +187,9 @@ time_t getTeensy3Time();
 void getTimeISO8601(char *iso8601Time, size_t bufferSize);
 void updateValveExperiment();
 void updateValvePreflush();
+void updateManualFlush(bool valveWasMoving);
+void startManualFlush();
+void stopManualFlush();
 void startValveExperiment();
 void startValveFlush();
 void logValveChange(const char *event);
@@ -444,10 +449,15 @@ void updateValveExperiment() {
 
   if (systemState != SystemState::Acquiring) {
     valveExperimentState = ValveExperimentState::Idle;
-    updateValvePreflush();
+    if (manualFlushActive) {
+      updateManualFlush(valveWasMoving);
+    } else {
+      updateValvePreflush();
+    }
     return;
   }
 
+  manualFlushActive = false;
   valvePreflushEnabled = false;
   valvePreflushActive = false;
 
@@ -546,6 +556,42 @@ void updateValvePreflush() {
     logValveChange("PREFLUSH_FLUSH");
   }
   preflushNextChamber = !preflushNextChamber;
+}
+
+void updateManualFlush(bool valveWasMoving) {
+  if (valves.isMoving()) {
+    return;
+  }
+
+  if (valveWasMoving) {
+    manualFlushTimer = 0;
+    return;
+  }
+
+  if (manualFlushTimer < FLUSH_INTERVAL_MS) {
+    return;
+  }
+
+  manualFlushTimer = 0;
+  valves.toggleChamber();
+  logValveChange("MANUAL_FLUSH_TOGGLE");
+}
+
+void startManualFlush() {
+  manualFlushActive = true;
+  valvePreflushEnabled = false;
+  valvePreflushActive = false;
+  valves.moveFlushToFlush();
+  logValveChange("MANUAL_FLUSH_ON");
+  valves.moveChamberToA();
+  logValveChange("MANUAL_FLUSH_C1");
+  manualFlushTimer = 0;
+}
+
+void stopManualFlush() {
+  manualFlushActive = false;
+  valves.moveFlushToRecirculate();
+  logValveChange("MANUAL_FLUSH_OFF");
 }
 
 void logValveChange(const char *event) {
@@ -704,6 +750,26 @@ void handleCommand(char *command) {
   if (strcmp(command, "POFF") == 0) {
     turnPumpOff();
     sendOk("POFF");
+    return;
+  }
+
+  if (strcmp(command, "FON") == 0) {
+    if (systemState == SystemState::Acquiring) {
+      sendErr("FON", "Acquiring");
+      return;
+    }
+    if (activeTransitionCommand[0] != '\0') {
+      sendErr("FON", "Busy");
+      return;
+    }
+    startManualFlush();
+    sendOk("FON");
+    return;
+  }
+
+  if (strcmp(command, "FOFF") == 0) {
+    stopManualFlush();
+    sendOk("FOFF");
     return;
   }
 
