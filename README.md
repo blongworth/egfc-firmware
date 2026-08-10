@@ -67,7 +67,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | --- | --- |
 | `?` | Query current readable status. |
 | `TSTAT` | Query detailed turbopump status. |
-| `TP` | Query RGA total pressure ion current in amps. Rejected while RGA mass acquisition is active. |
+| `TP` | Query raw RGA total pressure integer from `TP?`. Rejected while RGA mass acquisition is active. |
 | `ST` | Query RGA stored total-pressure sensitivity factor in `mA/Torr`. Rejected while RGA mass acquisition is active. |
 | `RERR` | Query the RGA STATUS error byte with `ER?`. Rejected while RGA mass acquisition is active. |
 | `RCLR` | Clear/update RGA error bytes by querying `EC?`, `ED?`, `EF?`, `EM?`, `EP?`, and `EQ?`, then report `ER?`. Rejected while acquiring. |
@@ -106,8 +106,8 @@ Status responses use:
 
 ```text
 S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
-TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>
-TP,<total_pressure_current_A>
+TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current|NA>
+TP,<raw_total_pressure_current>
 ST,<total_pressure_sensitivity_mA_per_Torr>
 RE,STATUS=<status_byte>
 PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>
@@ -132,8 +132,8 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | Prefix | Format | Meaning |
 | --- | --- | --- |
 | `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
-| `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>` | Detailed turbopump status response. |
-| `TP,` | `TP,<total_pressure_current_A>` | RGA total pressure ion current response from the RGA `TP?` command. |
+| `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current|NA>` | Detailed turbopump/RGA status response. |
+| `TP,` | `TP,<raw_total_pressure_current>` | Raw 4-byte signed integer from the RGA `TP?` command. Multiply by `1e-16` for amps. |
 | `ST,` | `ST,<total_pressure_sensitivity_mA_per_Torr>` | RGA stored total-pressure sensitivity factor response from the RGA `ST?` command. |
 | `RE,` | `RE,STATUS=<status_byte>` | RGA error status response. |
 | `PS,` | `PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
@@ -144,7 +144,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | `ACK,` | `ACK,<command>` | Transition command accepted. |
 | `DONE,` | `DONE,<command>` | Transition command reached its target state. |
 | `ERR,` | `ERR,<command>,<message>` | Command rejected. |
-| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. For payload `3`, the row is `!:<timestamp>,<turbo_error>,<turbo_speed_Hz>,<turbo_power_W>,<turbo_voltage>,<turbo_electronics_temp_C>,<turbo_bottom_temp_C>,<turbo_motor_temp_C>,<rga_filament>,<total_pressure_current_A>`. |
+| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. For payload `3`, the row is `!:<timestamp>,<turbo_error>,<turbo_speed_Hz>,<turbo_power_W>,<turbo_voltage>,<turbo_electronics_temp_C>,<turbo_bottom_temp_C>,<turbo_motor_temp_C>,<rga_filament>,<raw_total_pressure_current|NA>`. |
 | `R:` | `R:<timestamp>,<mass>,<current>` | One RGA mass reading. Also written to the SD data file. |
 
 Timestamps are ISO-8601-style UTC strings from the Teensy RTC, for example:
@@ -159,7 +159,7 @@ Simple status events use a numeric payload, for example:
 !:2026-06-02T14:30:00Z,5
 ```
 
-Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, RGA filament status, and RGA total pressure ion current.
+Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, RGA filament status, and raw RGA total pressure current. Multiply the raw total pressure value by `1e-16` for amps.
 
 ## Running the System
 

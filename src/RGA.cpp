@@ -148,27 +148,46 @@ bool RGADevice::prepareForMeasurements(int noiseFloor, unsigned long timeoutMs)
   return calibrateAll(timeoutMs);
 }
 
-float RGADevice::totalPressure(unsigned long timeoutMs)
+bool RGADevice::totalPressureRaw(unsigned long timeoutMs, int32_t *current)
 {
   flushInput();
   write("TP?\r");
 
+  return readInt32LittleEndian(timeoutMs, current);
+}
+
+float RGADevice::totalPressure(unsigned long timeoutMs)
+{
+  int32_t current = 0;
+  if (!totalPressureRaw(timeoutMs, &current)) {
+    return NAN;
+  }
+
+  return static_cast<float>(current) * 1.0e-16f;
+}
+
+bool RGADevice::readInt32LittleEndian(unsigned long timeoutMs, int32_t *value)
+{
   elapsedMillis timer;
   while (serial.available() < 4 && timer < timeoutMs) {
   }
 
-  if (serial.available() < 4) {
-    return NAN;
+  uint8_t response[4];
+  if (serial.available() < static_cast<int>(sizeof(response))) {
+    return false;
   }
 
-  uint8_t response[4];
   serial.readBytes(response, sizeof(response));
-  int32_t current = static_cast<int32_t>(response[0]) |
-                    (static_cast<int32_t>(response[1]) << 8) |
-                    (static_cast<int32_t>(response[2]) << 16) |
-                    (static_cast<int32_t>(response[3]) << 24);
+  uint32_t raw = static_cast<uint32_t>(response[0]) |
+                 (static_cast<uint32_t>(response[1]) << 8) |
+                 (static_cast<uint32_t>(response[2]) << 16) |
+                 (static_cast<uint32_t>(response[3]) << 24);
 
-  return static_cast<float>(current) * 1.0e-16f;
+  if (value) {
+    *value = static_cast<int32_t>(raw);
+  }
+
+  return true;
 }
 
 float RGADevice::totalPressureSensitivity(unsigned long timeoutMs)

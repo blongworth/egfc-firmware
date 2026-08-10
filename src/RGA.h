@@ -18,6 +18,7 @@ public:
   bool clearElectrometer(unsigned long timeoutMs);
   bool calibrateAll(unsigned long timeoutMs);
   bool prepareForMeasurements(int noiseFloor, unsigned long timeoutMs);
+  bool totalPressureRaw(unsigned long timeoutMs, int32_t *current);
   float totalPressure(unsigned long timeoutMs);
   float totalPressureSensitivity(unsigned long timeoutMs);
   int errorStatus(unsigned long timeoutMs);
@@ -40,6 +41,7 @@ private:
   size_t write(const char *command);
   size_t readBytes(char *buffer, size_t length);
   int read();
+  bool readInt32LittleEndian(unsigned long timeoutMs, int32_t *value);
   int readIntResponse(const char *command, unsigned long timeoutMs);
   float readFloatResponse(const char *command, unsigned long timeoutMs);
   float readStatus(const char *command, int start, int end);
