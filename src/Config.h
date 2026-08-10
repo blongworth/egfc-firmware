@@ -48,8 +48,13 @@ const uint8_t VALVE_SLEEP_PIN = 4;
 const uint8_t FLUSH_VALVE_PIN_A = 5;
 const uint8_t FLUSH_VALVE_PIN_B = 6;
 const unsigned long VALVE_MOVE_TIME_MS = 10000;
+
+// experiment timing
+// time to measure on each chamber
 const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MS = 20000;
+// experiment duration
 const unsigned long VALVE_EXPERIMENT_INTERVAL_MS = 60000;
+// time to flush each chamber between experiments
 const unsigned long FLUSH_INTERVAL_MS = 30000;
 
 // Oxygen limits from the latest SCALUP reading.
