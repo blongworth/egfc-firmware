@@ -29,6 +29,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Board: Teensy 4.1
 - Debug/surface serial: `Serial` at `9600`
 - Main firmware configuration is in `src/Config.h`
+- Loop-rate logging is disabled by default with `ENABLE_LOOP_RATE_LOG = 0`; set it to `1` to print loop frequency once per second.
 - RGA serial: `Serial4` at `28800`, `SERIAL_8N1`
 - SCALUP serial: `Serial3` at `28800`, `SERIAL_8N1`
 - Turbopump serial: USB host serial at `9600`

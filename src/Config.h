@@ -9,6 +9,7 @@
 const uint8_t LED_PIN = 13;
 const int SD_CHIP_SELECT = BUILTIN_SDCARD;
 const int SURFACE_COMMAND_BUFFER_SIZE = 100;
+#define ENABLE_LOOP_RATE_LOG 0
 
 // RGA serial, startup, mass scan, and detector settings.
 const uint32_t RGA_BAUD = 28800;

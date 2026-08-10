@@ -128,7 +128,9 @@ int activeRgaMass = 0;
 
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 
+#if ENABLE_LOOP_RATE_LOG
 void printLoopRate();
+#endif
 void createNewDataFile();
 void GEMS_Start(int TB_Spd3);
 void startTurboOnly(int TB_Spd3);
@@ -378,12 +380,15 @@ void loop() {
 
   turbo.task();
 
+#if ENABLE_LOOP_RATE_LOG
   printLoopRate();
+#endif
 }
 
 
 ////////////////////// Functions //////////////////////
 
+#if ENABLE_LOOP_RATE_LOG
 void printLoopRate() {
   static unsigned long previousMillis = 0;
   static unsigned long loopCount = 0;
@@ -400,6 +405,7 @@ void printLoopRate() {
     previousMillis = currentMillis;
   }
 }
+#endif
 
 
 void createNewDataFile()
