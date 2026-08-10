@@ -2,10 +2,62 @@
 
 RuntimeConfig::RuntimeConfig()
 {
+  resetToDefaults();
+}
+
+void RuntimeConfig::resetToDefaults()
+{
+  for (byte i = 0; i < MAX_RGA_MASSES; i++) {
+    rgaMasses[i] = 0;
+  }
   rgaNumMasses = RGA_NUM_MASSES < MAX_RGA_MASSES ? RGA_NUM_MASSES : MAX_RGA_MASSES;
   for (byte i = 0; i < rgaNumMasses; i++) {
     rgaMasses[i] = RGA_MASSES[i];
   }
+  rgaReadyBeforeAcquisitionMs = RGA_READY_BEFORE_ACQUISITION_MS;
+  turboReadyBeforeRgaMs = TURBO_READY_BEFORE_RGA_MS;
+  chamberValveToggleIntervalMs = CHAMBER_VALVE_TOGGLE_INTERVAL_MS;
+  minExperimentIntervalMs = MIN_EXPERIMENT_INTERVAL_MS;
+  maxExperimentIntervalMs = MAX_EXPERIMENT_INTERVAL_MS;
+  oxygenMinMgL = OXYGEN_MIN_MG_L;
+  oxygenMaxMgL = OXYGEN_MAX_MG_L;
+}
+
+RuntimeConfig::Data RuntimeConfig::data() const
+{
+  Data out = {};
+  out.rgaNumMasses = rgaNumMasses;
+  for (byte i = 0; i < rgaNumMasses && i < MAX_RGA_MASSES; i++) {
+    out.rgaMasses[i] = rgaMasses[i];
+  }
+  out.rgaReadyBeforeAcquisitionMs = rgaReadyBeforeAcquisitionMs;
+  out.turboReadyBeforeRgaMs = turboReadyBeforeRgaMs;
+  out.chamberValveToggleIntervalMs = chamberValveToggleIntervalMs;
+  out.minExperimentIntervalMs = minExperimentIntervalMs;
+  out.maxExperimentIntervalMs = maxExperimentIntervalMs;
+  out.oxygenMinMgL = oxygenMinMgL;
+  out.oxygenMaxMgL = oxygenMaxMgL;
+  return out;
+}
+
+bool RuntimeConfig::applyData(const Data &data)
+{
+  if (data.rgaNumMasses == 0 || data.rgaNumMasses > MAX_RGA_MASSES) {
+    return false;
+  }
+
+  for (byte i = 0; i < data.rgaNumMasses; i++) {
+    rgaMasses[i] = data.rgaMasses[i];
+  }
+  rgaNumMasses = data.rgaNumMasses;
+  rgaReadyBeforeAcquisitionMs = data.rgaReadyBeforeAcquisitionMs;
+  turboReadyBeforeRgaMs = data.turboReadyBeforeRgaMs;
+  chamberValveToggleIntervalMs = data.chamberValveToggleIntervalMs;
+  minExperimentIntervalMs = data.minExperimentIntervalMs;
+  maxExperimentIntervalMs = data.maxExperimentIntervalMs;
+  oxygenMinMgL = data.oxygenMinMgL;
+  oxygenMaxMgL = data.oxygenMaxMgL;
+  return true;
 }
 
 bool RuntimeConfig::isKnownKey(const char *key) const

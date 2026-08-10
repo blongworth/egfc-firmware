@@ -18,6 +18,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - `src/main.cpp`: main setup, loop, surface command handling, run/stop sequencing, SD logging, status messages, and experiment coordination.
 - `src/Config.h`: user-tunable hardware pins, serial settings, timing values, thresholds, and network settings.
 - `src/RuntimeConfig.cpp` and `src/RuntimeConfig.h`: runtime config storage, command allowlist, parsing, and response formatting.
+- `src/ConfigStore.cpp` and `src/ConfigStore.h`: EEPROM persistence for runtime config.
 - `src/RGA.cpp` and `src/RGA.h`: RGA serial module with status, noise-floor, and mass-scan helpers.
 - `src/SCALUP.cpp` and `src/SCALUP.h`: SCALUP sonde serial parser with the most recent parsed reading.
 - `src/PwmRpm.cpp` and `src/PwmRpm.h`: PWM output and RPM pulse-count readback helper.
@@ -73,6 +74,9 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `CFG?` | Print all runtime settings. |
 | `CFG,<KEY>?` | Print one runtime setting. |
 | `CFG,<KEY>=<VALUE>` | Override an allowed runtime setting for the current power cycle. Rejected while acquiring, acquisition-starting, or busy. |
+| `CFGS` | Save current runtime settings to Teensy EEPROM. Rejected while acquiring, acquisition-starting, or busy. |
+| `CFGL` | Load runtime settings from Teensy EEPROM. Rejected while acquiring, acquisition-starting, or busy. |
+| `CFGD` | Clear saved EEPROM settings and restore `Config.h` defaults. Rejected while acquiring, acquisition-starting, or busy. |
 | `TP` | Query raw RGA total pressure integer from `TP?`. Rejected while RGA mass acquisition is active. |
 | `ST` | Query RGA stored total-pressure sensitivity factor in `mA/Torr`. Rejected while RGA mass acquisition is active. |
 | `RERR` | Query the RGA STATUS error byte with `ER?`. Rejected while RGA mass acquisition is active. |
@@ -128,7 +132,7 @@ Transition commands are `TON`, `RUN`, `RDY`, and `OFF`. `OFF` can interrupt anot
 
 Readable states are `Off`, `Turbo starting`, `Turbo ready`, `RGA starting`, `RGA ready`, `Acquisition starting`, `Acquiring`, `Stopping`, and `Error`.
 
-Serial `CFG` writes override the compiled `src/Config.h` defaults for the current power cycle only. Command-settable keys are:
+On boot, valid saved EEPROM settings override the compiled `src/Config.h` defaults. Serial `CFG` writes change the current RAM settings only until `CFGS` is sent. Command-settable keys are:
 
 ```text
 RGA_MASSES

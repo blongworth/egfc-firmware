@@ -9,6 +9,7 @@
 #include <TimeLib.h>
 
 #include "Config.h"
+#include "ConfigStore.h"
 #include "RGA.h"
 #include "RuntimeConfig.h"
 #include "SCALUP.h"
@@ -27,6 +28,7 @@ bool file_created = false;
 TurboPump turbo;
 RGADevice rga(Serial4);
 SCALUPDevice scalup(Serial3);
+ConfigStore configStore;
 
 DualValveController valves(VALVE_SLEEP_PIN,
                            CHAMBER_VALVE_PIN_A,
@@ -170,6 +172,8 @@ void clearRgaErrorStatus();
 bool turnElectronMultiplierOn();
 bool turnElectronMultiplierOff();
 bool handleConfigCommand(char *command);
+bool handleConfigStoreCommand(const char *command);
+bool configChangeAllowed();
 void sendConfigAll();
 void sendConfigValue(const char *key);
 void sendResponse(const char *response);
@@ -219,6 +223,15 @@ void setup() {
 
   rga.begin(RGA_BAUD, SERIAL_8N1);
   scalup.begin(SCALUP_BAUD);
+
+  ConfigLoadResult configLoadResult = configStore.load(runtimeConfig);
+  if (configLoadResult == ConfigLoadResult::Loaded) {
+    Serial.println("CFG,loaded,EEPROM");
+  } else if (configLoadResult == ConfigLoadResult::NotSaved) {
+    Serial.println("CFG,default,EEPROM not set");
+  } else {
+    Serial.println("CFG,warn,invalid EEPROM config");
+  }
 
   pinMode(LED_PIN, OUTPUT);
 
@@ -692,6 +705,13 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "CFGS") == 0 || strcmp(command, "CFGL") == 0 || strcmp(command, "CFGD") == 0) {
+    if (!handleConfigStoreCommand(command)) {
+      sendErr(command, "Failed");
+    }
+    return;
+  }
+
   if (strncmp(command, "CFG", 3) == 0) {
     if (!handleConfigCommand(command)) {
       sendErr("CFG", "Invalid command");
@@ -984,9 +1004,7 @@ bool handleConfigCommand(char *command) {
     return true;
   }
 
-  if (systemState == SystemState::Acquiring ||
-      systemState == SystemState::AcquisitionStarting ||
-      activeTransitionCommand[0] != '\0') {
+  if (!configChangeAllowed()) {
     sendErr("CFG", "Busy");
     return true;
   }
@@ -999,6 +1017,49 @@ bool handleConfigCommand(char *command) {
 
   sendOk("CFG");
   return true;
+}
+
+bool handleConfigStoreCommand(const char *command) {
+  if (!configChangeAllowed()) {
+    sendErr(command, "Busy");
+    return true;
+  }
+
+  if (strcmp(command, "CFGS") == 0) {
+    if (!configStore.save(runtimeConfig)) {
+      sendErr("CFGS", "write failed");
+      return true;
+    }
+    sendOk("CFGS");
+    return true;
+  }
+
+  if (strcmp(command, "CFGL") == 0) {
+    ConfigLoadResult result = configStore.load(runtimeConfig);
+    if (result == ConfigLoadResult::Loaded) {
+      sendOk("CFGL");
+    } else if (result == ConfigLoadResult::NotSaved) {
+      sendErr("CFGL", "no saved config");
+    } else {
+      sendErr("CFGL", "bad config");
+    }
+    return true;
+  }
+
+  if (strcmp(command, "CFGD") == 0) {
+    configStore.clear();
+    runtimeConfig.resetToDefaults();
+    sendOk("CFGD");
+    return true;
+  }
+
+  return false;
+}
+
+bool configChangeAllowed() {
+  return systemState != SystemState::Acquiring &&
+         systemState != SystemState::AcquisitionStarting &&
+         activeTransitionCommand[0] == '\0';
 }
 
 void sendConfigAll() {

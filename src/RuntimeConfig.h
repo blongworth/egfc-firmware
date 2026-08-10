@@ -8,8 +8,23 @@ class RuntimeConfig {
 public:
   static const byte MAX_RGA_MASSES = 16;
 
+  struct Data {
+    byte rgaMasses[MAX_RGA_MASSES];
+    byte rgaNumMasses;
+    unsigned long rgaReadyBeforeAcquisitionMs;
+    unsigned long turboReadyBeforeRgaMs;
+    unsigned long chamberValveToggleIntervalMs;
+    unsigned long minExperimentIntervalMs;
+    unsigned long maxExperimentIntervalMs;
+    float oxygenMinMgL;
+    float oxygenMaxMgL;
+  };
+
   RuntimeConfig();
 
+  void resetToDefaults();
+  Data data() const;
+  bool applyData(const Data &data);
   bool isKnownKey(const char *key) const;
   bool isCommandSettableKey(const char *key) const;
   bool setValue(const char *key, const char *value, const char **errorMessage);
