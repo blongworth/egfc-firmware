@@ -171,6 +171,11 @@ float RGADevice::totalPressure(unsigned long timeoutMs)
   return static_cast<float>(current) * 1.0e-16f;
 }
 
+float RGADevice::totalPressureSensitivity(unsigned long timeoutMs)
+{
+  return readFloatResponse("ST?\r", timeoutMs);
+}
+
 int RGADevice::electronMultiplierOption(unsigned long timeoutMs)
 {
   return readIntResponse("MO?\r", timeoutMs);
@@ -333,6 +338,38 @@ int RGADevice::readIntResponse(const char *command, unsigned long timeoutMs)
   }
   response[len] = '\0';
   return atoi(response);
+}
+
+float RGADevice::readFloatResponse(const char *command, unsigned long timeoutMs)
+{
+  flushInput();
+  write(command);
+
+  elapsedMillis timer;
+  char response[16];
+  size_t len = 0;
+
+  while (timer < timeoutMs && len < sizeof(response) - 1) {
+    if (!serial.available()) {
+      continue;
+    }
+
+    char c = serial.read();
+    if (c == '\r' || c == '\n') {
+      if (len == 0) {
+        continue;
+      }
+      break;
+    }
+
+    response[len++] = c;
+  }
+
+  if (len == 0) {
+    return NAN;
+  }
+  response[len] = '\0';
+  return atof(response);
 }
 
 bool RGADevice::readStatusBytes(unsigned long timeoutMs)

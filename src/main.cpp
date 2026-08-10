@@ -147,6 +147,7 @@ void sendStatus();
 void sendTurboStatus();
 void sendPumpStatus();
 void sendRgaTotalPressure();
+void sendRgaTotalPressureSensitivity();
 void sendRgaErrorStatus();
 void clearRgaErrorStatus();
 bool turnElectronMultiplierOn();
@@ -629,6 +630,15 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "ST") == 0) {
+    if (systemState == SystemState::Acquiring) {
+      sendErr("ST", "RGA acquiring");
+      return;
+    }
+    sendRgaTotalPressureSensitivity();
+    return;
+  }
+
   if (strcmp(command, "RERR") == 0) {
     if (systemState == SystemState::Acquiring) {
       sendErr("RERR", "RGA acquiring");
@@ -921,6 +931,18 @@ void sendRgaTotalPressure() {
 
   char response[40];
   snprintf(response, sizeof(response), "TP,%.6e", totalPressureA);
+  sendResponse(response);
+}
+
+void sendRgaTotalPressureSensitivity() {
+  float sensitivity = rga.totalPressureSensitivity(RGA_TOTAL_PRESSURE_TIMEOUT_MS);
+  if (sensitivity != sensitivity) {
+    sendErr("ST", "Timeout");
+    return;
+  }
+
+  char response[40];
+  snprintf(response, sizeof(response), "ST,%.6f", sensitivity);
   sendResponse(response);
 }
 
