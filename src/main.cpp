@@ -222,7 +222,7 @@ void setup() {
   Serial.println("Initializing RGA...");
   int rgaInitialStatus = 0;
   int rgaFilamentOffStatus = 0;
-  if (rga.initialize(&rgaInitialStatus, &rgaFilamentOffStatus)) {
+  if (rga.initialize(&rgaInitialStatus, &rgaFilamentOffStatus, RGA_STARTUP_TIMEOUT_MS)) {
     Serial.print("RGA Status: ");
     Serial.println(rgaInitialStatus, BIN);
     Serial.println("RGA filament off");
