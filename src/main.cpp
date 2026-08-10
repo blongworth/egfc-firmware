@@ -1466,7 +1466,6 @@ void logRgaMeasurement(int mass, int current) {
   snprintf(csvRow, sizeof(csvRow), "R:%s,%d,%d", iso8601Time, mass, current);
   Serial.println(csvRow);
 
-  Serial.println("Writing to file.");
   if (dataFile) {
     dataFile.println(csvRow);
   } else {
