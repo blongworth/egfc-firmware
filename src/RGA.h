@@ -19,6 +19,8 @@ public:
   bool calibrateAll(unsigned long timeoutMs);
   bool prepareForMeasurements(int noiseFloor, unsigned long timeoutMs);
   float totalPressure(unsigned long timeoutMs);
+  int errorStatus(unsigned long timeoutMs);
+  bool clearErrors(unsigned long timeoutMs, int *statusByte);
   int electronMultiplierOption(unsigned long timeoutMs);
   bool turnElectronMultiplierOn(int biasVoltage, unsigned long timeoutMs);
   bool turnElectronMultiplierOff(unsigned long timeoutMs);

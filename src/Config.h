@@ -30,6 +30,7 @@ const byte RGA_NUM_MASSES = sizeof(RGA_MASSES) / sizeof(RGA_MASSES[0]);
 const unsigned long RGA_STARTUP_TIMEOUT_MS = 60000;
 const unsigned long RGA_SCAN_TIMEOUT_MS = 3000;
 const unsigned long RGA_TOTAL_PRESSURE_TIMEOUT_MS = 3000;
+const unsigned long RGA_ERROR_TIMEOUT_MS = 3000;
 const unsigned long RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS = 3000;
 const int RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400;
 const bool RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false;

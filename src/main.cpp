@@ -145,6 +145,8 @@ void sendStatus();
 void sendTurboStatus();
 void sendPumpStatus();
 void sendRgaTotalPressure();
+void sendRgaErrorStatus();
+void clearRgaErrorStatus();
 bool turnElectronMultiplierOn();
 bool turnElectronMultiplierOff();
 void sendResponse(const char *response);
@@ -618,6 +620,24 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "RERR") == 0) {
+    if (systemState == SystemState::Acquiring) {
+      sendErr("RERR", "RGA acquiring");
+      return;
+    }
+    sendRgaErrorStatus();
+    return;
+  }
+
+  if (strcmp(command, "RCLR") == 0) {
+    if (systemState == SystemState::Acquiring) {
+      sendErr("RCLR", "RGA acquiring");
+      return;
+    }
+    clearRgaErrorStatus();
+    return;
+  }
+
   if (strcmp(command, "EMON") == 0) {
     if (turnElectronMultiplierOn()) {
       sendOk("EMON");
@@ -867,6 +887,30 @@ void sendRgaTotalPressure() {
 
   char response[40];
   snprintf(response, sizeof(response), "TP,%.6e", totalPressureA);
+  sendResponse(response);
+}
+
+void sendRgaErrorStatus() {
+  int status = rga.errorStatus(RGA_ERROR_TIMEOUT_MS);
+  if (status < 0) {
+    sendErr("RERR", "Timeout");
+    return;
+  }
+
+  char response[40];
+  snprintf(response, sizeof(response), "RE,STATUS=%d", status);
+  sendResponse(response);
+}
+
+void clearRgaErrorStatus() {
+  int status = 0;
+  if (!rga.clearErrors(RGA_ERROR_TIMEOUT_MS, &status)) {
+    sendErr("RCLR", "Timeout");
+    return;
+  }
+
+  char response[40];
+  snprintf(response, sizeof(response), "RE,STATUS=%d", status);
   sendResponse(response);
 }
 

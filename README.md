@@ -67,6 +67,8 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `?` | Query current readable status. |
 | `TSTAT` | Query detailed turbopump status. |
 | `TP` | Query RGA total pressure ion current in amps. Rejected while RGA mass acquisition is active. |
+| `RERR` | Query the RGA STATUS error byte with `ER?`. Rejected while RGA mass acquisition is active. |
+| `RCLR` | Clear/update RGA error bytes by querying `EC?`, `ED?`, `EF?`, `EM?`, `EP?`, and `EQ?`, then report `ER?`. Rejected while acquiring. |
 | `EMON` | Turn on the RGA electron multiplier using the configured bias voltage. Requires filament on and CDEM option present. Rejected while acquiring. |
 | `EMOFF` | Turn off the RGA electron multiplier. Rejected while acquiring. |
 | `PSTAT` | Query pump PWM/RPM status. |
@@ -102,6 +104,7 @@ Status responses use:
 S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
 TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>
 TP,<total_pressure_current_A>
+RE,STATUS=<status_byte>
 PS,PWM=<duty_percent>,RPM=<rpm>
 ```
 
@@ -126,6 +129,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
 | `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>` | Detailed turbopump status response. |
 | `TP,` | `TP,<total_pressure_current_A>` | RGA total pressure ion current response from the RGA `TP?` command. |
+| `RE,` | `RE,STATUS=<status_byte>` | RGA error status response. |
 | `PS,` | `PS,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
 | `V:` | `V:<timestamp>,<event>,CHAMBER=<state>,FLUSH=<state>` | Valve change event. Also written to the SD data file. |
 | `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |

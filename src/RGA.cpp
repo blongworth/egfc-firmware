@@ -176,6 +176,39 @@ int RGADevice::electronMultiplierOption(unsigned long timeoutMs)
   return readIntResponse("MO?\r", timeoutMs);
 }
 
+int RGADevice::errorStatus(unsigned long timeoutMs)
+{
+  return readIntResponse("ER?\r", timeoutMs);
+}
+
+bool RGADevice::clearErrors(unsigned long timeoutMs, int *statusByte)
+{
+  const char *errorQueries[] = {
+    "EC?\r",
+    "ED?\r",
+    "EF?\r",
+    "EM?\r",
+    "EP?\r",
+    "EQ?\r"
+  };
+
+  for (size_t i = 0; i < sizeof(errorQueries) / sizeof(errorQueries[0]); i++) {
+    if (readIntResponse(errorQueries[i], timeoutMs) < 0) {
+      return false;
+    }
+  }
+
+  int status = errorStatus(timeoutMs);
+  if (status < 0) {
+    return false;
+  }
+
+  if (statusByte) {
+    *statusByte = status;
+  }
+  return true;
+}
+
 bool RGADevice::turnElectronMultiplierOn(int biasVoltage, unsigned long timeoutMs)
 {
   char command[12];
@@ -276,15 +309,28 @@ int RGADevice::readIntResponse(const char *command, unsigned long timeoutMs)
   write(command);
 
   elapsedMillis timer;
-  while (serial.available() < 1 && timer < timeoutMs) {
+  char response[12];
+  size_t len = 0;
+
+  while (timer < timeoutMs && len < sizeof(response) - 1) {
+    if (!serial.available()) {
+      continue;
+    }
+
+    char c = serial.read();
+    if (c == '\r' || c == '\n') {
+      if (len == 0) {
+        continue;
+      }
+      break;
+    }
+
+    response[len++] = c;
   }
 
-  if (serial.available() < 1) {
+  if (len == 0) {
     return -1;
   }
-
-  char response[12];
-  size_t len = serial.readBytesUntil('\r', response, sizeof(response) - 1);
   response[len] = '\0';
   return atoi(response);
 }
