@@ -37,7 +37,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Default turbopump speed: `1200 Hz`
 - Pump PWM output: pin `7`, default duty `100%`, startup enabled with `PUMP_ON_AT_STARTUP = true`, default PWM frequency `20000 Hz`, 8-bit resolution
 - Pump RPM readback: pin `8`, `INPUT_PULLUP`, rising-edge interrupt, 1 pulse/rev, 1 second RPM calculation interval
-- Pump status log interval: `10000 ms`
+- Pump RPM is included in the detailed `!:` status row.
 - RGA noise floor: `2`
 - RGA masses: `2, 15, 16, 18, 28, 30, 32, 33, 34, 40, 44`
 - RGA electron multiplier command bias: `1400 V` (`HV1400`); off command uses `HV0`
@@ -139,12 +139,11 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | `PS,` | `PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
 | `V:` | `V:<timestamp>,<C1|C2>,<Re|Fl>` | Valve position after a change. Also written to the SD data file. |
 | `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
-| `PM:` | `PM:<timestamp>,<duty_percent>,<rpm>` | Pump status row every 10 seconds. Also written to the SD data file. |
 | `OK,` | `OK,<command>` | Immediate command completed. |
 | `ACK,` | `ACK,<command>` | Transition command accepted. |
 | `DONE,` | `DONE,<command>` | Transition command reached its target state. |
 | `ERR,` | `ERR,<command>,<message>` | Command rejected. |
-| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. For payload `3`, the row is `!:<timestamp>,<turbo_error>,<turbo_speed_Hz>,<turbo_power_W>,<turbo_voltage>,<turbo_electronics_temp_C>,<turbo_bottom_temp_C>,<turbo_motor_temp_C>,<rga_filament>,<raw_total_pressure_current|NA>`. |
+| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. For payload `3`, the row is `!:<timestamp>,<turbo_error>,<turbo_speed_Hz>,<turbo_power_W>,<turbo_voltage>,<turbo_electronics_temp_C>,<turbo_bottom_temp_C>,<turbo_motor_temp_C>,<rga_filament>,<raw_total_pressure_current|NA>,<pump_rpm>`. |
 | `R:` | `R:<timestamp>,<mass>,<current>` | One RGA mass reading. Also written to the SD data file. |
 
 Timestamps are ISO-8601-style UTC strings from the Teensy RTC, for example:
@@ -159,7 +158,7 @@ Simple status events use a numeric payload, for example:
 !:2026-06-02T14:30:00Z,5
 ```
 
-Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, RGA filament status, and raw RGA total pressure current. Multiply the raw total pressure value by `1e-16` for amps.
+Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, RGA filament status, raw RGA total pressure current, and pump RPM. Multiply the raw total pressure value by `1e-16` for amps.
 
 ## Running the System
 

@@ -74,7 +74,6 @@ const uint8_t PUMP_PWM_PIN = 7;
 const uint8_t PUMP_RPM_PIN = 8;
 const float PUMP_DEFAULT_PWM_DUTY_PERCENT = 100.0f;
 const bool PUMP_ON_AT_STARTUP = false;
-const unsigned long PUMP_LOG_INTERVAL_MS = 10000;
 const PwmRpm::Config PUMP_CONFIG = {
   PUMP_PWM_PIN,
   PUMP_RPM_PIN

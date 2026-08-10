@@ -48,7 +48,6 @@ ValveExperimentState valveExperimentState = ValveExperimentState::Idle;
 elapsedMillis valveExperimentTimer;
 elapsedMillis chamberValveTimer;
 elapsedMillis flushTimer;
-elapsedMillis pumpLogTimer;
 
 #ifdef USE_ETHERNET
 // Set up ethernet
@@ -178,8 +177,6 @@ void startValveExperiment();
 void startValveFlush();
 void logValveChange(const char *event);
 void logScalupReadingIfNew();
-void updatePumpLog();
-void logPumpStatus();
 void turnPumpOn();
 void turnPumpOff();
 bool oxygenOutsideRange();
@@ -373,7 +370,6 @@ void loop() {
   updateTurboStartup();
 
   pump.update();
-  updatePumpLog();
 
   scalup.task();
   logScalupReadingIfNew();
@@ -561,42 +557,6 @@ void logScalupReadingIfNew() {
 #ifdef USE_ETHERNET
   Udp.beginPacket(destinationIP, destinationPort);
   Udp.println(scalupRow);
-  Udp.write(13);
-  Udp.endPacket();
-#endif
-}
-
-void updatePumpLog() {
-  if (pumpLogTimer < PUMP_LOG_INTERVAL_MS) {
-    return;
-  }
-
-  pumpLogTimer = 0;
-  logPumpStatus();
-}
-
-void logPumpStatus() {
-  char iso8601Time[25];
-  getTimeISO8601(iso8601Time, sizeof(iso8601Time));
-
-  char pumpRow[80];
-  snprintf(pumpRow, sizeof(pumpRow), "PM:%s,%.1f,%.1f",
-           iso8601Time,
-           pump.dutyCycle(),
-           pump.rpm());
-  Serial.println(pumpRow);
-
-  if (dataFile) {
-    dataFile.println(pumpRow);
-  } else {
-    Serial.print("Could not open SD file: ");
-    Serial.print(FileName);
-    Serial.println(" for pump write!");
-  }
-
-#ifdef USE_ETHERNET
-  Udp.beginPacket(destinationIP, destinationPort);
-  Udp.println(pumpRow);
   Udp.write(13);
   Udp.endPacket();
 #endif
@@ -1372,6 +1332,8 @@ void StatusMsg(int M) {
     }
     Udp.print(",");
     Udp.print(totalPressureText);
+    Udp.print(",");
+    Udp.print(pump.rpm());
   }
   else {
     Udp.print(M);
@@ -1413,6 +1375,8 @@ void StatusMsg(int M) {
     }
     Serial.print(",");
     Serial.print(totalPressureText);
+    Serial.print(",");
+    Serial.print(pump.rpm());
   }
   else {
     Serial.print(M);
