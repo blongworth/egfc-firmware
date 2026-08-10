@@ -35,7 +35,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Turbopump serial: USB host serial at `9600`
 - SD card: `BUILTIN_SDCARD`
 - Default turbopump speed: `1200 Hz`
-- Pump PWM output: pin `7`, default duty `100%`, startup enabled with `PUMP_ON_AT_STARTUP = true`, default PWM frequency `20000 Hz`, 8-bit resolution
+- Pump PWM output: pin `7`, default duty `100%`, startup disabled with `PUMP_ON_AT_STARTUP = false`, default PWM frequency `20000 Hz`, 8-bit resolution
 - Pump RPM readback: pin `8`, `INPUT_PULLUP`, rising-edge interrupt, 1 pulse/rev, 1 second RPM calculation interval
 - Pump RPM is included in the detailed `!:` status row.
 - RGA noise floor: `2`
@@ -45,7 +45,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - RGA electron multiplier total pressure limit: disabled by default with `RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0`; set a positive ion-current threshold in amps to require `TP?` below that value before enabling the multiplier
 - Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP.
 - Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`.
-- Valve timing: move time `10000 ms`, chamber toggle interval `20000 ms`, minimum experiment interval before oxygen checks `30000 ms`, maximum experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
+- Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `20000 ms`, minimum experiment interval before oxygen checks `30000 ms`, maximum experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
 - Oxygen flush limits use the latest SCALUP dissolved oxygen reading: minimum `2.0 mg/L`, maximum `12.0 mg/L`.
 - SCALUP raw serial echo is currently enabled for debugging.
 
@@ -172,9 +172,10 @@ Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes tur
 4. If needed, set time with `TIME<unix>` (`T<unix>` is still accepted).
 5. Start the full measurement sequence with `RUN` (`!Z11` is still accepted).
 6. The firmware sets turbopump speed, starts the turbopump, checks for readiness, turns on the RGA filament, then begins mass scans.
-7. During acquisition, the valve experiment starts with flush recirculating and chamber A selected, toggles the chamber valve on the configured interval, then flushes chamber A and chamber B before starting the next experiment.
-8. RGA, SCALUP, valve, and pump rows are printed, written to SD, and sent over UDP if Ethernet is enabled.
-9. Stop with `OFF` (`!Z20`, `!Z21`, and `!Z22` are still accepted). This stops acquisition, verifies the RGA filament is off, then stops the turbopump.
+7. If `PUMP_ON_AT_STARTUP` is true, preflush alternates staggered chamber and flush valve changes before acquisition starts.
+8. During acquisition, the valve experiment starts with flush recirculating and chamber A selected, toggles the chamber valve on the configured interval, then flushes chamber A and chamber B before starting the next experiment.
+9. RGA, SCALUP, valve, and pump rows are printed, written to SD, and sent over UDP if Ethernet is enabled.
+10. Stop with `OFF` (`!Z20`, `!Z21`, and `!Z22` are still accepted). This stops acquisition, verifies the RGA filament is off, then stops the turbopump.
 
 ## Notes
 

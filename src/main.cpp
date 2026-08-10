@@ -48,6 +48,9 @@ ValveExperimentState valveExperimentState = ValveExperimentState::Idle;
 elapsedMillis valveExperimentTimer;
 elapsedMillis chamberValveTimer;
 elapsedMillis flushTimer;
+elapsedMillis valvePreflushTimer;
+bool valvePreflushActive = false;
+bool preflushNextChamber = true;
 
 #ifdef USE_ETHERNET
 // Set up ethernet
@@ -173,6 +176,7 @@ int int_out(char aaa[50], int a, int b);
 time_t getTeensy3Time();
 void getTimeISO8601(char *iso8601Time, size_t bufferSize);
 void updateValveExperiment();
+void updateValvePreflush();
 void startValveExperiment();
 void startValveFlush();
 void logValveChange(const char *event);
@@ -426,8 +430,11 @@ void updateValveExperiment() {
 
   if (systemState != SystemState::Acquiring) {
     valveExperimentState = ValveExperimentState::Idle;
+    updateValvePreflush();
     return;
   }
+
+  valvePreflushActive = false;
 
   if (valves.isMoving()) {
     return;
@@ -493,6 +500,37 @@ void startValveFlush() {
   logValveChange("FLUSH_CHAMBER_A");
   flushTimer = 0;
   valveExperimentState = ValveExperimentState::FlushingA;
+}
+
+void updateValvePreflush() {
+  if (!PUMP_ON_AT_STARTUP || !pumpEnabled) {
+    valvePreflushActive = false;
+    return;
+  }
+
+  if (valves.isMoving()) {
+    return;
+  }
+
+  if (!valvePreflushActive) {
+    valvePreflushActive = true;
+    preflushNextChamber = true;
+    valvePreflushTimer = PREFLUSH_VALVE_INTERVAL_MS;
+  }
+
+  if (valvePreflushTimer < PREFLUSH_VALVE_INTERVAL_MS) {
+    return;
+  }
+
+  valvePreflushTimer = 0;
+  if (preflushNextChamber) {
+    valves.toggleChamber();
+    logValveChange("PREFLUSH_CHAMBER");
+  } else {
+    valves.toggleFlush();
+    logValveChange("PREFLUSH_FLUSH");
+  }
+  preflushNextChamber = !preflushNextChamber;
 }
 
 void logValveChange(const char *event) {
