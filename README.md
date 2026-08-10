@@ -34,7 +34,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Turbopump serial: USB host serial at `9600`
 - SD card: `BUILTIN_SDCARD`
 - Default turbopump speed: `1200 Hz`
-- Pump PWM output: pin `7`, default PWM frequency `20000 Hz`, 8-bit resolution
+- Pump PWM output: pin `7`, default duty `100%`, startup enabled with `PUMP_ON_AT_STARTUP = true`, default PWM frequency `20000 Hz`, 8-bit resolution
 - Pump RPM readback: pin `8`, `INPUT_PULLUP`, rising-edge interrupt, 1 pulse/rev, 1 second RPM calculation interval
 - Pump status log interval: `10000 ms`
 - RGA noise floor: `2`
@@ -72,6 +72,8 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `EMON` | Turn on the RGA electron multiplier using the configured bias voltage. Requires filament on and CDEM option present. Rejected while acquiring. |
 | `EMOFF` | Turn off the RGA electron multiplier. Rejected while acquiring. |
 | `PSTAT` | Query pump PWM/RPM status. |
+| `PON` | Turn pump PWM output on at the configured/current duty setting. |
+| `POFF` | Turn pump PWM output off. |
 | `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `TON` | Start turbopump only. |
 | `TOFF` | Stop acquisition, then stop turbo only if RGA is off. |
@@ -105,7 +107,7 @@ S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
 TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>
 TP,<total_pressure_current_A>
 RE,STATUS=<status_byte>
-PS,PWM=<duty_percent>,RPM=<rpm>
+PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>
 ```
 
 Immediate commands return `OK,<command>` when complete. Transition commands return `ACK,<command>` when accepted and `DONE,<command>` when the target state is reached. Errors use `ERR,<command>,<message>`.
@@ -130,7 +132,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>` | Detailed turbopump status response. |
 | `TP,` | `TP,<total_pressure_current_A>` | RGA total pressure ion current response from the RGA `TP?` command. |
 | `RE,` | `RE,STATUS=<status_byte>` | RGA error status response. |
-| `PS,` | `PS,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
+| `PS,` | `PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
 | `V:` | `V:<timestamp>,<event>,CHAMBER=<state>,FLUSH=<state>` | Valve change event. Also written to the SD data file. |
 | `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
 | `PM:` | `PM:<timestamp>,<duty_percent>,<rpm>` | Pump status row every 10 seconds. Also written to the SD data file. |

@@ -34,6 +34,8 @@ DualValveController valves(VALVE_SLEEP_PIN,
                            FLUSH_VALVE_PIN_B,
                            VALVE_MOVE_TIME_MS);
 PwmRpm pump(PUMP_CONFIG);
+float pumpOnDutyPercent = PUMP_DEFAULT_PWM_DUTY_PERCENT;
+bool pumpEnabled = false;
 
 enum class ValveExperimentState {
   Idle,
@@ -175,6 +177,8 @@ void logValveChange(const char *event);
 void logScalupReadingIfNew();
 void updatePumpLog();
 void logPumpStatus();
+void turnPumpOn();
+void turnPumpOff();
 bool oxygenOutsideRange();
 
 ////////////////////// Setup //////////////////////
@@ -198,6 +202,10 @@ void setup() {
   valves.begin();
   if (!pump.begin()) {
     Serial.println("Pump PWM/RPM initialization failed");
+  } else if (PUMP_ON_AT_STARTUP) {
+    turnPumpOn();
+  } else {
+    turnPumpOff();
   }
 
   // set the Time library to use Teensy's RTC to keep time
@@ -658,6 +666,18 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "PON") == 0) {
+    turnPumpOn();
+    sendOk("PON");
+    return;
+  }
+
+  if (strcmp(command, "POFF") == 0) {
+    turnPumpOff();
+    sendOk("POFF");
+    return;
+  }
+
   if (strncmp(command, "PMP", 3) == 0) {
     char *end = nullptr;
     float duty = strtof(command + 3, &end);
@@ -665,6 +685,8 @@ void handleCommand(char *command) {
       sendErr("PMP", "Invalid duty");
       return;
     }
+    pumpOnDutyPercent = duty;
+    pumpEnabled = duty > 0.0f;
     pump.setDutyCycle(duty);
     sendOk("PMP");
     return;
@@ -872,11 +894,22 @@ void sendTurboStatus() {
 }
 
 void sendPumpStatus() {
-  char response[60];
-  snprintf(response, sizeof(response), "PS,PWM=%.1f,RPM=%.1f",
+  char response[80];
+  snprintf(response, sizeof(response), "PS,STATE=%s,PWM=%.1f,RPM=%.1f",
+           pumpEnabled ? "on" : "off",
            pump.dutyCycle(),
            pump.rpm());
   sendResponse(response);
+}
+
+void turnPumpOn() {
+  pumpEnabled = true;
+  pump.setDutyCycle(pumpOnDutyPercent);
+}
+
+void turnPumpOff() {
+  pumpEnabled = false;
+  pump.setDutyCycle(0.0f);
 }
 
 void sendRgaTotalPressure() {
