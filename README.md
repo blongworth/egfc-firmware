@@ -167,7 +167,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | `RE,` | `RE,STATUS=<status_byte>` | RGA error status response. |
 | `PS,` | `PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
 | `V:` | `V:<timestamp>,<C1|C2>,<Re|Fl>` | Valve position after a change. Also written to the SD data file. |
-| `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
+| `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<pressure_mbar>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
 | `OK,` | `OK,<command>` | Immediate command completed. |
 | `ACK,` | `ACK,<command>` | Transition command accepted. |
 | `DONE,` | `DONE,<command>` | Transition command reached its target state. |

@@ -655,11 +655,12 @@ void logScalupReadingIfNew() {
   const SCALUPReading &reading = scalup.latest();
   char scalupRow[160];
   snprintf(scalupRow, sizeof(scalupRow),
-           "P:%s,%s,%.3f,%.3f,%.3f,%.3f",
+           "P:%s,%s,%.3f,%.3f,%.3f,%.3f,%.3f",
            reading.rtcTimestamp,
            reading.timestamp,
            reading.tempC,
            reading.salPSU,
+           reading.pressureMbar,
            reading.doMgL,
            reading.ph);
   Serial.println(scalupRow);
