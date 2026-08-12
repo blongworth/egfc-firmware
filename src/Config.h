@@ -34,6 +34,8 @@ const unsigned long RGA_SCAN_TIMEOUT_MS = 3000;
 const unsigned long RGA_TOTAL_PRESSURE_TIMEOUT_MS = 3000;
 const unsigned long RGA_ERROR_TIMEOUT_MS = 3000;
 const unsigned long RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS = 3000;
+// dwell after confirming filament off before stopping the turbopump
+const unsigned long RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS = 60000;
 // how long to wait after RGA is ready before starting acquisition (auto mode)
 const unsigned long RGA_READY_BEFORE_ACQUISITION_MS = 300000;
 const int RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400;

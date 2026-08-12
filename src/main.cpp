@@ -188,6 +188,7 @@ bool beginTransition(const char *command);
 void clearTransition();
 void stopAcquisition();
 void finishPendingRgaScanBeforeStop();
+void waitAfterFilamentOffBeforeTurboStop();
 bool stopRgaOnly();
 bool stopTurboOnly();
 bool isCommand(const char *command, const char *modern, const char *legacy);
@@ -1112,6 +1113,7 @@ void sendConfigAll() {
   sendConfigValue("AUTOSTART_ON_BOOT");
   sendConfigValue("PUMP_ON_AT_STARTUP");
   sendConfigValue("RGA_MASSES");
+  sendConfigValue("RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS");
   sendConfigValue("RGA_READY_BEFORE_ACQUISITION_MS");
   sendConfigValue("TURBO_READY_BEFORE_RGA_MS");
   sendConfigValue("CHAMBER_VALVE_TOGGLE_INTERVAL_MS");
@@ -1469,12 +1471,24 @@ bool stopRgaOnly() {
   return true;
 }
 
+void waitAfterFilamentOffBeforeTurboStop() {
+  if (runtimeConfig.rgaFilamentOffBeforeTurboStopMs == 0) {
+    return;
+  }
+
+  Serial.print("Waiting after filament off before turbo stop: ");
+  Serial.print(runtimeConfig.rgaFilamentOffBeforeTurboStopMs);
+  Serial.println(" ms");
+  delay(runtimeConfig.rgaFilamentOffBeforeTurboStopMs);
+}
+
 bool stopTurboOnly() {
   stopAcquisition();
   if (!rga.ensureFilamentOff(10, 5000)) {
     Serial.println("RGA filament did not confirm off; turbo stop skipped");
     return false;
   }
+  waitAfterFilamentOffBeforeTurboStop();
   turboStartupState = TurboStartupState::Idle;
   turbo.stop();
   setSystemState(SystemState::Off);
@@ -1637,6 +1651,7 @@ bool GEMS_Stop() {
   }
 
   Serial.println("Filament off");
+  waitAfterFilamentOffBeforeTurboStop();
 
   StatusMsg(3);
   StatusMsg(7);

@@ -15,6 +15,7 @@ void RuntimeConfig::resetToDefaults()
   for (byte i = 0; i < rgaNumMasses; i++) {
     rgaMasses[i] = RGA_MASSES[i];
   }
+  rgaFilamentOffBeforeTurboStopMs = RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS;
   rgaReadyBeforeAcquisitionMs = RGA_READY_BEFORE_ACQUISITION_MS;
   turboReadyBeforeRgaMs = TURBO_READY_BEFORE_RGA_MS;
   chamberValveToggleIntervalMs = CHAMBER_VALVE_TOGGLE_INTERVAL_MS;
@@ -32,6 +33,7 @@ RuntimeConfig::Data RuntimeConfig::data() const
   for (byte i = 0; i < rgaNumMasses && i < MAX_RGA_MASSES; i++) {
     out.rgaMasses[i] = rgaMasses[i];
   }
+  out.rgaFilamentOffBeforeTurboStopMs = rgaFilamentOffBeforeTurboStopMs;
   out.rgaReadyBeforeAcquisitionMs = rgaReadyBeforeAcquisitionMs;
   out.turboReadyBeforeRgaMs = turboReadyBeforeRgaMs;
   out.chamberValveToggleIntervalMs = chamberValveToggleIntervalMs;
@@ -53,6 +55,7 @@ bool RuntimeConfig::applyData(const Data &data)
   }
   autostartOnBoot = data.autostartOnBoot;
   rgaNumMasses = data.rgaNumMasses;
+  rgaFilamentOffBeforeTurboStopMs = data.rgaFilamentOffBeforeTurboStopMs;
   rgaReadyBeforeAcquisitionMs = data.rgaReadyBeforeAcquisitionMs;
   turboReadyBeforeRgaMs = data.turboReadyBeforeRgaMs;
   chamberValveToggleIntervalMs = data.chamberValveToggleIntervalMs;
@@ -73,6 +76,7 @@ bool RuntimeConfig::isCommandSettableKey(const char *key) const
 {
   return strcmp(key, "AUTOSTART_ON_BOOT") == 0 ||
          strcmp(key, "RGA_MASSES") == 0 ||
+         strcmp(key, "RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS") == 0 ||
          strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MS") == 0 ||
          strcmp(key, "TURBO_READY_BEFORE_RGA_MS") == 0 ||
          strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MS") == 0 ||
@@ -115,6 +119,15 @@ bool RuntimeConfig::setValue(const char *key, const char *value, const char **er
       return false;
     }
     rgaReadyBeforeAcquisitionMs = unsignedValue;
+    return true;
+  }
+
+  if (strcmp(key, "RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS") == 0) {
+    if (!parseUnsignedLongValue(value, &unsignedValue)) {
+      *errorMessage = "invalid value";
+      return false;
+    }
+    rgaFilamentOffBeforeTurboStopMs = unsignedValue;
     return true;
   }
 
@@ -189,6 +202,8 @@ bool RuntimeConfig::formatValue(const char *key, char *buffer, size_t bufferSize
     }
   } else if (strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MS") == 0) {
     snprintf(buffer, bufferSize, "CFG,RGA_READY_BEFORE_ACQUISITION_MS=%lu", rgaReadyBeforeAcquisitionMs);
+  } else if (strcmp(key, "RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS") == 0) {
+    snprintf(buffer, bufferSize, "CFG,RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS=%lu", rgaFilamentOffBeforeTurboStopMs);
   } else if (strcmp(key, "TURBO_READY_BEFORE_RGA_MS") == 0) {
     snprintf(buffer, bufferSize, "CFG,TURBO_READY_BEFORE_RGA_MS=%lu", turboReadyBeforeRgaMs);
   } else if (strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MS") == 0) {

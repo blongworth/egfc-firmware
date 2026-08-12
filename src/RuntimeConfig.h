@@ -12,6 +12,7 @@ public:
     bool autostartOnBoot;
     byte rgaMasses[MAX_RGA_MASSES];
     byte rgaNumMasses;
+    unsigned long rgaFilamentOffBeforeTurboStopMs;
     unsigned long rgaReadyBeforeAcquisitionMs;
     unsigned long turboReadyBeforeRgaMs;
     unsigned long chamberValveToggleIntervalMs;
@@ -34,6 +35,7 @@ public:
   bool autostartOnBoot = AUTOSTART_ON_BOOT;
   byte rgaMasses[MAX_RGA_MASSES] = {};
   byte rgaNumMasses = 0;
+  unsigned long rgaFilamentOffBeforeTurboStopMs = RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS;
   unsigned long rgaReadyBeforeAcquisitionMs = RGA_READY_BEFORE_ACQUISITION_MS;
   unsigned long turboReadyBeforeRgaMs = TURBO_READY_BEFORE_RGA_MS;
   unsigned long chamberValveToggleIntervalMs = CHAMBER_VALVE_TOGGLE_INTERVAL_MS;
