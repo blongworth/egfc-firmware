@@ -9,6 +9,7 @@ public:
   static const byte MAX_RGA_MASSES = 16;
 
   struct Data {
+    bool autostartOnBoot;
     byte rgaMasses[MAX_RGA_MASSES];
     byte rgaNumMasses;
     unsigned long rgaReadyBeforeAcquisitionMs;
@@ -30,6 +31,7 @@ public:
   bool setValue(const char *key, const char *value, const char **errorMessage);
   bool formatValue(const char *key, char *buffer, size_t bufferSize) const;
 
+  bool autostartOnBoot = AUTOSTART_ON_BOOT;
   byte rgaMasses[MAX_RGA_MASSES] = {};
   byte rgaNumMasses = 0;
   unsigned long rgaReadyBeforeAcquisitionMs = RGA_READY_BEFORE_ACQUISITION_MS;
@@ -41,6 +43,7 @@ public:
   float oxygenMaxMgL = OXYGEN_MAX_MG_L;
 
 private:
+  bool parseBoolValue(const char *value, bool *out) const;
   bool parseUnsignedLongValue(const char *value, unsigned long *out) const;
   bool parseFloatValue(const char *value, float *out) const;
   bool parseMassListValue(const char *value, byte *masses, byte *numMasses) const;

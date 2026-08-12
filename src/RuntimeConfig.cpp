@@ -7,6 +7,7 @@ RuntimeConfig::RuntimeConfig()
 
 void RuntimeConfig::resetToDefaults()
 {
+  autostartOnBoot = AUTOSTART_ON_BOOT;
   for (byte i = 0; i < MAX_RGA_MASSES; i++) {
     rgaMasses[i] = 0;
   }
@@ -26,6 +27,7 @@ void RuntimeConfig::resetToDefaults()
 RuntimeConfig::Data RuntimeConfig::data() const
 {
   Data out = {};
+  out.autostartOnBoot = autostartOnBoot;
   out.rgaNumMasses = rgaNumMasses;
   for (byte i = 0; i < rgaNumMasses && i < MAX_RGA_MASSES; i++) {
     out.rgaMasses[i] = rgaMasses[i];
@@ -49,6 +51,7 @@ bool RuntimeConfig::applyData(const Data &data)
   for (byte i = 0; i < data.rgaNumMasses; i++) {
     rgaMasses[i] = data.rgaMasses[i];
   }
+  autostartOnBoot = data.autostartOnBoot;
   rgaNumMasses = data.rgaNumMasses;
   rgaReadyBeforeAcquisitionMs = data.rgaReadyBeforeAcquisitionMs;
   turboReadyBeforeRgaMs = data.turboReadyBeforeRgaMs;
@@ -62,14 +65,14 @@ bool RuntimeConfig::applyData(const Data &data)
 
 bool RuntimeConfig::isKnownKey(const char *key) const
 {
-  return strcmp(key, "AUTOSTART_ON_BOOT") == 0 ||
-         strcmp(key, "PUMP_ON_AT_STARTUP") == 0 ||
+  return strcmp(key, "PUMP_ON_AT_STARTUP") == 0 ||
          isCommandSettableKey(key);
 }
 
 bool RuntimeConfig::isCommandSettableKey(const char *key) const
 {
-  return strcmp(key, "RGA_MASSES") == 0 ||
+  return strcmp(key, "AUTOSTART_ON_BOOT") == 0 ||
+         strcmp(key, "RGA_MASSES") == 0 ||
          strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MS") == 0 ||
          strcmp(key, "TURBO_READY_BEFORE_RGA_MS") == 0 ||
          strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MS") == 0 ||
@@ -85,6 +88,14 @@ bool RuntimeConfig::setValue(const char *key, const char *value, const char **er
   float floatValue = 0.0f;
   byte masses[MAX_RGA_MASSES];
   byte numMasses = 0;
+
+  if (strcmp(key, "AUTOSTART_ON_BOOT") == 0) {
+    if (!parseBoolValue(value, &autostartOnBoot)) {
+      *errorMessage = "invalid value";
+      return false;
+    }
+    return true;
+  }
 
   if (strcmp(key, "RGA_MASSES") == 0) {
     if (!parseMassListValue(value, masses, &numMasses)) {
@@ -168,7 +179,7 @@ bool RuntimeConfig::setValue(const char *key, const char *value, const char **er
 bool RuntimeConfig::formatValue(const char *key, char *buffer, size_t bufferSize) const
 {
   if (strcmp(key, "AUTOSTART_ON_BOOT") == 0) {
-    snprintf(buffer, bufferSize, "CFG,AUTOSTART_ON_BOOT=%s", AUTOSTART_ON_BOOT ? "true" : "false");
+    snprintf(buffer, bufferSize, "CFG,AUTOSTART_ON_BOOT=%s", autostartOnBoot ? "true" : "false");
   } else if (strcmp(key, "PUMP_ON_AT_STARTUP") == 0) {
     snprintf(buffer, bufferSize, "CFG,PUMP_ON_AT_STARTUP=%s", PUMP_ON_AT_STARTUP ? "true" : "false");
   } else if (strcmp(key, "RGA_MASSES") == 0) {
@@ -195,6 +206,29 @@ bool RuntimeConfig::formatValue(const char *key, char *buffer, size_t bufferSize
   }
 
   return true;
+}
+
+bool RuntimeConfig::parseBoolValue(const char *value, bool *out) const
+{
+  if (strcmp(value, "1") == 0 ||
+      strcmp(value, "true") == 0 ||
+      strcmp(value, "TRUE") == 0 ||
+      strcmp(value, "on") == 0 ||
+      strcmp(value, "ON") == 0) {
+    *out = true;
+    return true;
+  }
+
+  if (strcmp(value, "0") == 0 ||
+      strcmp(value, "false") == 0 ||
+      strcmp(value, "FALSE") == 0 ||
+      strcmp(value, "off") == 0 ||
+      strcmp(value, "OFF") == 0) {
+    *out = false;
+    return true;
+  }
+
+  return false;
 }
 
 bool RuntimeConfig::parseUnsignedLongValue(const char *value, unsigned long *out) const

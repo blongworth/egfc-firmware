@@ -135,6 +135,7 @@ Readable states are `Off`, `Turbo starting`, `Turbo ready`, `RGA starting`, `RGA
 On boot, valid saved EEPROM settings override the compiled `src/Config.h` defaults. Serial `CFG` writes change the current RAM settings only until `CFGS` is sent. Command-settable keys are:
 
 ```text
+AUTOSTART_ON_BOOT
 RGA_MASSES
 RGA_READY_BEFORE_ACQUISITION_MS
 TURBO_READY_BEFORE_RGA_MS
@@ -145,7 +146,7 @@ OXYGEN_MIN_MG_L
 OXYGEN_MAX_MG_L
 ```
 
-`AUTOSTART_ON_BOOT` and `PUMP_ON_AT_STARTUP` can be queried with `CFG,<KEY>?`, but are read-only over serial because they affect boot behavior.
+`PUMP_ON_AT_STARTUP` can be queried with `CFG,PUMP_ON_AT_STARTUP?`, but is read-only over serial because pump startup still uses the compiled boot setting.
 
 Data rows use:
 

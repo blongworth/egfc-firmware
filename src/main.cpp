@@ -338,7 +338,7 @@ void setup() {
 
   Serial.println("Surface ready");
 
-  if (AUTOSTART_ON_BOOT) {
+  if (runtimeConfig.autostartOnBoot) {
     autostartPending = true;
   }
 }
