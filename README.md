@@ -87,7 +87,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `PON` | Turn pump PWM output on at the configured/current duty setting. |
 | `POFF` | Turn pump PWM output off. |
 | `FON` | Start manual chamber flushing: set flush valve to `Fl`, start on `C1`, then alternate `C1`/`C2` every `FLUSH_INTERVAL_MS`. Rejected while acquiring or busy. |
-| `FOFF` | Stop manual chamber flushing and set flush valve to `Re`. |
+| `FOFF` | Stop manual chamber flushing or startup valve exercise and set flush valve to `Re`. |
 | `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `TON` | Start turbopump only. |
 | `TOFF` | Stop acquisition, then stop turbo only if RGA is off. |

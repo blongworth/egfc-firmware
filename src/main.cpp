@@ -609,6 +609,8 @@ void startManualFlush() {
 
 void stopManualFlush() {
   manualFlushActive = false;
+  valvePreflushEnabled = false;
+  valvePreflushActive = false;
   valves.moveFlushToRecirculate();
   logValveChange("MANUAL_FLUSH_OFF");
 }
