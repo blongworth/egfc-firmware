@@ -151,6 +151,10 @@ void updateAcquisitionStartDelay();
 bool GEMS_Stop();
 bool startRGA(bool startAcquisition);
 void StatusMsg(int M);
+void readSerialCommand();
+#ifdef USE_ETHERNET
+void readUdpCommand();
+#endif
 void handleCommand(char *command);
 void trimCommand(char *command);
 void sendOk(const char *command);
@@ -330,22 +334,10 @@ void setup() {
 void loop() {
   updateAutostart();
 
-  // listen for surface message
+  readSerialCommand();
 #ifdef USE_ETHERNET
-  int packetSize = Udp.parsePacket();
-#else
-  int packetSize = Serial.available();
+  readUdpCommand();
 #endif
-
-  if (packetSize) {
-#ifdef USE_ETHERNET
-    size_t msgLen = Udp.readBytesUntil('\r', SrfMsg, SURFACE_COMMAND_BUFFER_SIZE - 1);
-#else
-    size_t msgLen = Serial.readBytesUntil('\r', SrfMsg, SURFACE_COMMAND_BUFFER_SIZE - 1);
-#endif
-    SrfMsg[msgLen] = '\0';
-    handleCommand(SrfMsg);
-  }
 
   // Start Turbo Mass Spec and ADV
   if (fullStartRequested) {
@@ -669,6 +661,51 @@ bool oxygenOutsideRange() {
   float oxygenMgL = scalup.latest().doMgL;
   return oxygenMgL < OXYGEN_MIN_MG_L || oxygenMgL > OXYGEN_MAX_MG_L;
 }
+
+void readSerialCommand() {
+  static char serialCommand[SURFACE_COMMAND_BUFFER_SIZE];
+  static size_t serialCommandLength = 0;
+
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\r' || c == '\n') {
+      serialCommand[serialCommandLength] = '\0';
+      if (serialCommandLength > 0) {
+        handleCommand(serialCommand);
+      }
+      serialCommandLength = 0;
+      continue;
+    }
+
+    if (serialCommandLength < SURFACE_COMMAND_BUFFER_SIZE - 1) {
+      serialCommand[serialCommandLength++] = c;
+    } else {
+      serialCommandLength = 0;
+      sendErr("SER", "Command too long");
+    }
+  }
+}
+
+#ifdef USE_ETHERNET
+void readUdpCommand() {
+  int packetSize = Udp.parsePacket();
+  if (!packetSize) {
+    return;
+  }
+
+  int msgLen = Udp.read(SrfMsg, SURFACE_COMMAND_BUFFER_SIZE - 1);
+  if (msgLen < 0) {
+    return;
+  }
+  SrfMsg[msgLen] = '\0';
+
+  while (Udp.available()) {
+    Udp.read();
+  }
+
+  handleCommand(SrfMsg);
+}
+#endif
 
 void handleCommand(char *command) {
   trimCommand(command);
@@ -1123,13 +1160,12 @@ bool turnElectronMultiplierOff() {
 }
 
 void sendResponse(const char *response) {
+  Serial.println(response);
 #ifdef USE_ETHERNET
   Udp.beginPacket(destinationIP, destinationPort);
   Udp.print(response);
   Udp.write(13);
   Udp.endPacket();
-#else
-  Serial.println(response);
 #endif
 }
 
