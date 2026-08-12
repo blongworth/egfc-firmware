@@ -47,7 +47,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - RGA electron multiplier at startup: disabled by default with `RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false`
 - RGA electron multiplier total pressure limit: disabled by default with `RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0`; set a positive ion-current threshold in amps to require `TP?` below that value before enabling the multiplier
 - RGA-ready dwell before acquisition is controlled by `RGA_READY_BEFORE_ACQUISITION_MS`.
-- Ethernet is disabled by default. Build the `teensy41_ethernet` PlatformIO environment to use UDP while keeping USB serial commands enabled.
+- Ethernet is enabled in the default PlatformIO build. The `teensy41_ethernet` environment uses UDP while keeping USB serial commands enabled.
 - Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`.
 - Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `20000 ms`, minimum experiment interval before oxygen checks `30000 ms`, maximum experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
 - Oxygen flush limits use the latest SCALUP dissolved oxygen reading: minimum `2.0 mg/L`, maximum `12.0 mg/L`.
@@ -58,10 +58,12 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 Install PlatformIO, then run from the repository root:
 
 ```sh
-pio run -e teensy41
-pio run -e teensy41 -t upload
+pio run
+pio run -t upload
 pio device monitor
 ```
+
+The default environment is `teensy41_ethernet`. To build without Ethernet, use `pio run -e teensy41`.
 
 ## Commands
 
