@@ -169,6 +169,7 @@ void sendErr(const char *command, const char *message);
 void sendStatus();
 void sendTurboStatus();
 void sendPumpStatus();
+void sendValvePumpStatus();
 void sendRgaTotalPressure();
 void sendRgaTotalPressureSensitivity();
 void sendRgaErrorStatus();
@@ -814,6 +815,11 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "VSTAT") == 0) {
+    sendValvePumpStatus();
+    return;
+  }
+
   if (strcmp(command, "PON") == 0) {
     turnPumpOn();
     sendOk("PON");
@@ -1197,6 +1203,19 @@ void sendTurboStatus() {
 void sendPumpStatus() {
   char response[80];
   snprintf(response, sizeof(response), "PS,STATE=%s,PWM=%.1f,RPM=%.1f",
+           pumpEnabled ? "on" : "off",
+           pump.dutyCycle(),
+           pump.rpm());
+  sendResponse(response);
+}
+
+void sendValvePumpStatus() {
+  char response[120];
+  snprintf(response, sizeof(response),
+           "VS,CHAMBER=%s,FLUSH=%s,VALVES=%s,PUMP=%s,PWM=%.1f,RPM=%.1f",
+           valves.chamberTerm(),
+           valves.flushTerm(),
+           valves.isMoving() ? "moving" : "idle",
            pumpEnabled ? "on" : "off",
            pump.dutyCycle(),
            pump.rpm());

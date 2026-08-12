@@ -86,6 +86,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `EMON` | Turn on the RGA electron multiplier using the configured bias voltage. Requires filament on and CDEM option present. Rejected while acquiring. |
 | `EMOFF` | Turn off the RGA electron multiplier. Rejected while acquiring. |
 | `PSTAT` | Query pump PWM/RPM status. |
+| `VSTAT` | Query current valve positions, valve motion state, and pump PWM/RPM status. |
 | `PON` | Turn pump PWM output on at the configured/current duty setting. |
 | `POFF` | Turn pump PWM output off. |
 | `FON` | Start manual chamber flushing: set flush valve to `Fl`, start on `C1`, then alternate `C1`/`C2` every `FLUSH_INTERVAL_MS`. Rejected while acquiring or busy. |
@@ -126,6 +127,7 @@ TP,<raw_total_pressure_current>
 ST,<total_pressure_sensitivity_mA_per_Torr>
 RE,STATUS=<status_byte>
 PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>
+VS,CHAMBER=<C1|C2|Unknown>,FLUSH=<Re|Fl|Unknown>,VALVES=<idle|moving>,PUMP=<on|off>,PWM=<duty_percent>,RPM=<rpm>
 ```
 
 Immediate commands return `OK,<command>` when complete. Transition commands return `ACK,<command>` when accepted and `DONE,<command>` when the target state is reached. Errors use `ERR,<command>,<message>`.
@@ -169,6 +171,7 @@ The USB serial port runs at `9600`. It carries human-readable boot/debug message
 | `ST,` | `ST,<total_pressure_sensitivity_mA_per_Torr>` | RGA stored total-pressure sensitivity factor response from the RGA `ST?` command. |
 | `RE,` | `RE,STATUS=<status_byte>` | RGA error status response. |
 | `PS,` | `PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
+| `VS,` | `VS,CHAMBER=<C1|C2|Unknown>,FLUSH=<Re|Fl|Unknown>,VALVES=<idle|moving>,PUMP=<on|off>,PWM=<duty_percent>,RPM=<rpm>` | Valve and pump status response. |
 | `V:` | `V:<timestamp>,<C1|C2>,<Re|Fl>` | Valve position after a change. Also written to the SD data file. |
 | `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<pressure_mbar>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
 | `OK,` | `OK,<command>` | Immediate command completed. |
