@@ -35,10 +35,11 @@ Firmware for the eelgrass flux chamber lander controller. The firmware controls 
 - RGA electron multiplier at startup: disabled by default with `RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false`
 - RGA electron multiplier total pressure limit: disabled by default with `RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0`; set a positive ion-current threshold in amps to require `TP?` below that value before enabling the multiplier
 - RGA filament-off dwell before turbopump shutdown defaults to `60000 ms` with `RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS`.
-- RGA-ready dwell before acquisition is controlled by `RGA_READY_BEFORE_ACQUISITION_MS`.
+- RGA-ready dwell before acquisition defaults to `15 minutes` and is controlled by `RGA_READY_BEFORE_ACQUISITION_MIN`.
+- Turbo-ready dwell before RGA startup defaults to `15 minutes` and is controlled by `TURBO_READY_BEFORE_RGA_MIN`.
 - Ethernet is enabled in the default PlatformIO build. The `teensy41_ethernet` environment uses UDP while keeping USB serial commands enabled.
 - Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`.
-- Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `20000 ms`, minimum experiment interval before oxygen checks `30000 ms`, maximum experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
+- Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `15 minutes`, minimum experiment interval before oxygen checks `180 minutes`, maximum experiment interval `180 minutes`, flush interval `30 minutes` per chamber.
 - Oxygen flush limits use the latest SCALUP dissolved oxygen reading: minimum `2.0 mg/L`, maximum `12.0 mg/L`.
 - SCALUP raw serial echo may be enabled for debugging.
 
@@ -80,7 +81,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `VSTAT` | Query current valve positions, valve motion state, and pump PWM/RPM status. |
 | `PON` | Turn pump PWM output on at the configured/current duty setting. |
 | `POFF` | Turn pump PWM output off. |
-| `FON` | Start manual chamber flushing: set flush valve to `Fl`, start on `C1`, then alternate `C1`/`C2` every `FLUSH_INTERVAL_MS`. Rejected while acquiring or busy. |
+| `FON` | Start manual chamber flushing: set flush valve to `Fl`, start on `C1`, then alternate `C1`/`C2` every `FLUSH_INTERVAL_MIN`. Rejected while acquiring or busy. |
 | `FOFF` | Stop manual chamber flushing or startup valve exercise and set flush valve to `Re`. |
 | `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `TON` | Start turbopump only. |
@@ -133,14 +134,16 @@ On boot, valid saved EEPROM settings override the compiled `src/Config.h` defaul
 AUTOSTART_ON_BOOT
 RGA_MASSES
 RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS
-RGA_READY_BEFORE_ACQUISITION_MS
-TURBO_READY_BEFORE_RGA_MS
-CHAMBER_VALVE_TOGGLE_INTERVAL_MS
-MIN_EXPERIMENT_INTERVAL_MS
-MAX_EXPERIMENT_INTERVAL_MS
+RGA_READY_BEFORE_ACQUISITION_MIN
+TURBO_READY_BEFORE_RGA_MIN
+CHAMBER_VALVE_TOGGLE_INTERVAL_MIN
+MIN_EXPERIMENT_INTERVAL_MIN
+MAX_EXPERIMENT_INTERVAL_MIN
 OXYGEN_MIN_MG_L
 OXYGEN_MAX_MG_L
 ```
+
+The chamber toggle and experiment interval settings are specified in minutes.
 
 `PUMP_ON_AT_STARTUP` can be queried with `CFG,PUMP_ON_AT_STARTUP?`, but is read-only over serial because pump startup still uses the compiled boot setting.
 
@@ -198,7 +201,7 @@ Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes tur
 3. Confirm boot output shows RTC, RGA initialization, SD initialization, and `Surface ready`.
 4. If needed, set time with `TIME<unix>` (`T<unix>` is still accepted).
 5. Start the full measurement sequence with `RUN` (`!Z11` is still accepted), or set `AUTOSTART_ON_BOOT = true` to start automatically after boot setup.
-6. The firmware sets turbopump speed, starts the turbopump, checks for readiness, turns on the RGA filament, waits `RGA_READY_BEFORE_ACQUISITION_MS`, then begins mass scans. This dwell applies to `RUN`, including boot autostart.
+6. The firmware sets turbopump speed, starts the turbopump, checks for readiness, waits `TURBO_READY_BEFORE_RGA_MIN`, turns on the RGA filament, waits `RGA_READY_BEFORE_ACQUISITION_MIN`, then begins mass scans. These dwells apply to `RUN`, including boot autostart.
 7. If `PUMP_ON_AT_STARTUP` is true, preflush alternates staggered chamber and flush valve changes before acquisition starts.
 8. During acquisition, the valve experiment starts with flush recirculating and chamber A selected, toggles the chamber valve on the configured interval, then flushes chamber A and chamber B before starting the next experiment.
 9. RGA, SCALUP, valve, and pump rows are printed, written to SD, and sent over UDP if Ethernet is enabled.

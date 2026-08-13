@@ -498,22 +498,22 @@ void updateValveExperiment() {
       return;
 
     case ValveExperimentState::Running:
-      if (chamberValveTimer >= runtimeConfig.chamberValveToggleIntervalMs) {
+      if (chamberValveTimer >= runtimeConfig.chamberValveToggleIntervalMin * MILLISECONDS_PER_MINUTE) {
         chamberValveTimer = 0;
         valves.toggleChamber();
         logValveChange("CHAMBER_TOGGLE");
         return;
       }
 
-      if (valveExperimentTimer >= runtimeConfig.maxExperimentIntervalMs ||
-          (valveExperimentTimer >= runtimeConfig.minExperimentIntervalMs && oxygenOutsideRange())) {
+      if (valveExperimentTimer >= runtimeConfig.maxExperimentIntervalMin * MILLISECONDS_PER_MINUTE ||
+          (valveExperimentTimer >= runtimeConfig.minExperimentIntervalMin * MILLISECONDS_PER_MINUTE && oxygenOutsideRange())) {
         startValveFlush();
         return;
       }
       return;
 
     case ValveExperimentState::FlushingA:
-      if (flushTimer >= FLUSH_INTERVAL_MS) {
+      if (flushTimer >= FLUSH_INTERVAL_MIN * MILLISECONDS_PER_MINUTE) {
         valves.moveChamberToB();
         logValveChange("FLUSH_CHAMBER_B");
         flushTimer = 0;
@@ -522,7 +522,7 @@ void updateValveExperiment() {
       return;
 
     case ValveExperimentState::FlushingB:
-      if (flushTimer >= FLUSH_INTERVAL_MS) {
+      if (flushTimer >= FLUSH_INTERVAL_MIN * MILLISECONDS_PER_MINUTE) {
         startValveExperiment();
       }
       return;
@@ -589,7 +589,7 @@ void updateManualFlush(bool valveWasMoving) {
     return;
   }
 
-  if (manualFlushTimer < FLUSH_INTERVAL_MS) {
+  if (manualFlushTimer < FLUSH_INTERVAL_MIN * MILLISECONDS_PER_MINUTE) {
     return;
   }
 
@@ -1123,11 +1123,11 @@ void sendConfigAll() {
   sendConfigValue("PUMP_ON_AT_STARTUP");
   sendConfigValue("RGA_MASSES");
   sendConfigValue("RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS");
-  sendConfigValue("RGA_READY_BEFORE_ACQUISITION_MS");
-  sendConfigValue("TURBO_READY_BEFORE_RGA_MS");
-  sendConfigValue("CHAMBER_VALVE_TOGGLE_INTERVAL_MS");
-  sendConfigValue("MIN_EXPERIMENT_INTERVAL_MS");
-  sendConfigValue("MAX_EXPERIMENT_INTERVAL_MS");
+  sendConfigValue("RGA_READY_BEFORE_ACQUISITION_MIN");
+  sendConfigValue("TURBO_READY_BEFORE_RGA_MIN");
+  sendConfigValue("CHAMBER_VALVE_TOGGLE_INTERVAL_MIN");
+  sendConfigValue("MIN_EXPERIMENT_INTERVAL_MIN");
+  sendConfigValue("MAX_EXPERIMENT_INTERVAL_MIN");
   sendConfigValue("OXYGEN_MIN_MG_L");
   sendConfigValue("OXYGEN_MAX_MG_L");
 }
@@ -1369,7 +1369,7 @@ void updateAutostart() {
 }
 
 void beginAcquisitionStartDelay(bool resetTimer) {
-  if (runtimeConfig.rgaReadyBeforeAcquisitionMs == 0) {
+  if (runtimeConfig.rgaReadyBeforeAcquisitionMin == 0) {
     acquisitionStartPending = false;
     setSystemState(SystemState::Acquiring);
     return;
@@ -1392,7 +1392,7 @@ void updateAcquisitionStartDelay() {
     return;
   }
 
-  if (acquisitionStartTimer < runtimeConfig.rgaReadyBeforeAcquisitionMs) {
+  if (acquisitionStartTimer < runtimeConfig.rgaReadyBeforeAcquisitionMin * MILLISECONDS_PER_MINUTE) {
     return;
   }
 
@@ -1680,7 +1680,7 @@ void updateTurboStartup() {
         StatusMsg(3);
         Turbo = turbo.isReady(turboStartupTargetSpeed);
         if (Turbo == 1) {
-          if (turboStartupStartRgaWhenReady && runtimeConfig.turboReadyBeforeRgaMs > 0) {
+          if (turboStartupStartRgaWhenReady && runtimeConfig.turboReadyBeforeRgaMin > 0) {
             Serial.println("Turbo ready, waiting before RGA start");
             turboReadyTimer = 0;
             turboStartupState = TurboStartupState::WaitReadyDwell;
@@ -1710,7 +1710,7 @@ void updateTurboStartup() {
         }
       }
 
-      if (turboReadyTimer >= runtimeConfig.turboReadyBeforeRgaMs) {
+      if (turboReadyTimer >= runtimeConfig.turboReadyBeforeRgaMin * MILLISECONDS_PER_MINUTE) {
         turboStartupState = TurboStartupState::Ready;
       }
       return;

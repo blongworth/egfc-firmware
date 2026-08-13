@@ -13,11 +13,11 @@ public:
     byte rgaMasses[MAX_RGA_MASSES];
     byte rgaNumMasses;
     unsigned long rgaFilamentOffBeforeTurboStopMs;
-    unsigned long rgaReadyBeforeAcquisitionMs;
-    unsigned long turboReadyBeforeRgaMs;
-    unsigned long chamberValveToggleIntervalMs;
-    unsigned long minExperimentIntervalMs;
-    unsigned long maxExperimentIntervalMs;
+    unsigned long rgaReadyBeforeAcquisitionMin;
+    unsigned long turboReadyBeforeRgaMin;
+    unsigned long chamberValveToggleIntervalMin;
+    unsigned long minExperimentIntervalMin;
+    unsigned long maxExperimentIntervalMin;
     float oxygenMinMgL;
     float oxygenMaxMgL;
   };
@@ -36,11 +36,11 @@ public:
   byte rgaMasses[MAX_RGA_MASSES] = {};
   byte rgaNumMasses = 0;
   unsigned long rgaFilamentOffBeforeTurboStopMs = RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS;
-  unsigned long rgaReadyBeforeAcquisitionMs = RGA_READY_BEFORE_ACQUISITION_MS;
-  unsigned long turboReadyBeforeRgaMs = TURBO_READY_BEFORE_RGA_MS;
-  unsigned long chamberValveToggleIntervalMs = CHAMBER_VALVE_TOGGLE_INTERVAL_MS;
-  unsigned long minExperimentIntervalMs = MIN_EXPERIMENT_INTERVAL_MS;
-  unsigned long maxExperimentIntervalMs = MAX_EXPERIMENT_INTERVAL_MS;
+  unsigned long rgaReadyBeforeAcquisitionMin = RGA_READY_BEFORE_ACQUISITION_MIN;
+  unsigned long turboReadyBeforeRgaMin = TURBO_READY_BEFORE_RGA_MIN;
+  unsigned long chamberValveToggleIntervalMin = CHAMBER_VALVE_TOGGLE_INTERVAL_MIN;
+  unsigned long minExperimentIntervalMin = MIN_EXPERIMENT_INTERVAL_MIN;
+  unsigned long maxExperimentIntervalMin = MAX_EXPERIMENT_INTERVAL_MIN;
   float oxygenMinMgL = OXYGEN_MIN_MG_L;
   float oxygenMaxMgL = OXYGEN_MAX_MG_L;
 

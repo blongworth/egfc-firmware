@@ -37,7 +37,7 @@ const unsigned long RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS = 3000;
 // dwell after confirming filament off before stopping the turbopump
 const unsigned long RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS = 60000;
 // how long to wait after RGA is ready before starting acquisition (auto mode)
-const unsigned long RGA_READY_BEFORE_ACQUISITION_MS = 900000;
+const unsigned long RGA_READY_BEFORE_ACQUISITION_MIN = 15;
 const int RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400;
 const bool RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false;
 const float RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0f;
@@ -47,7 +47,7 @@ const int TURBO_DEFAULT_SPEED_HZ = 1200;
 const unsigned long TURBO_STARTUP_TIMEOUT_MS = 300000;
 const unsigned long TURBO_STARTUP_POLL_MS = 1000;
 // how long to pump before starting RGA
-const unsigned long TURBO_READY_BEFORE_RGA_MS = 900000;
+const unsigned long TURBO_READY_BEFORE_RGA_MIN = 15;
 
 // Valve pins and experiment timing.
 const uint8_t CHAMBER_VALVE_PIN_A = 2;
@@ -58,16 +58,17 @@ const uint8_t FLUSH_VALVE_PIN_B = 6;
 const unsigned long VALVE_MOVE_TIME_MS = 10000;
 
 // experiment timing
+const unsigned long MILLISECONDS_PER_MINUTE = 60000UL;
 // time to measure on each chamber
-const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MS = 900000;
+const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MIN = 15;
 // time between staggered valve changes before acquisition starts
 const unsigned long PREFLUSH_VALVE_INTERVAL_MS = 30000;
 // earliest time oxygen can trigger a flush
-const unsigned long MIN_EXPERIMENT_INTERVAL_MS = 10800000;
+const unsigned long MIN_EXPERIMENT_INTERVAL_MIN = 180;
 // longest experiment before a flush is forced
-const unsigned long MAX_EXPERIMENT_INTERVAL_MS = 10800000;
+const unsigned long MAX_EXPERIMENT_INTERVAL_MIN = 180;
 // time to flush each chamber between experiments
-const unsigned long FLUSH_INTERVAL_MS = 1800000;
+const unsigned long FLUSH_INTERVAL_MIN = 30;
 
 // Oxygen limits from the latest SCALUP reading.
 const float OXYGEN_MIN_MG_L = 2.0f;

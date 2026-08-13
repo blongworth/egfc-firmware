@@ -16,11 +16,11 @@ void RuntimeConfig::resetToDefaults()
     rgaMasses[i] = RGA_MASSES[i];
   }
   rgaFilamentOffBeforeTurboStopMs = RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS;
-  rgaReadyBeforeAcquisitionMs = RGA_READY_BEFORE_ACQUISITION_MS;
-  turboReadyBeforeRgaMs = TURBO_READY_BEFORE_RGA_MS;
-  chamberValveToggleIntervalMs = CHAMBER_VALVE_TOGGLE_INTERVAL_MS;
-  minExperimentIntervalMs = MIN_EXPERIMENT_INTERVAL_MS;
-  maxExperimentIntervalMs = MAX_EXPERIMENT_INTERVAL_MS;
+  rgaReadyBeforeAcquisitionMin = RGA_READY_BEFORE_ACQUISITION_MIN;
+  turboReadyBeforeRgaMin = TURBO_READY_BEFORE_RGA_MIN;
+  chamberValveToggleIntervalMin = CHAMBER_VALVE_TOGGLE_INTERVAL_MIN;
+  minExperimentIntervalMin = MIN_EXPERIMENT_INTERVAL_MIN;
+  maxExperimentIntervalMin = MAX_EXPERIMENT_INTERVAL_MIN;
   oxygenMinMgL = OXYGEN_MIN_MG_L;
   oxygenMaxMgL = OXYGEN_MAX_MG_L;
 }
@@ -34,11 +34,11 @@ RuntimeConfig::Data RuntimeConfig::data() const
     out.rgaMasses[i] = rgaMasses[i];
   }
   out.rgaFilamentOffBeforeTurboStopMs = rgaFilamentOffBeforeTurboStopMs;
-  out.rgaReadyBeforeAcquisitionMs = rgaReadyBeforeAcquisitionMs;
-  out.turboReadyBeforeRgaMs = turboReadyBeforeRgaMs;
-  out.chamberValveToggleIntervalMs = chamberValveToggleIntervalMs;
-  out.minExperimentIntervalMs = minExperimentIntervalMs;
-  out.maxExperimentIntervalMs = maxExperimentIntervalMs;
+  out.rgaReadyBeforeAcquisitionMin = rgaReadyBeforeAcquisitionMin;
+  out.turboReadyBeforeRgaMin = turboReadyBeforeRgaMin;
+  out.chamberValveToggleIntervalMin = chamberValveToggleIntervalMin;
+  out.minExperimentIntervalMin = minExperimentIntervalMin;
+  out.maxExperimentIntervalMin = maxExperimentIntervalMin;
   out.oxygenMinMgL = oxygenMinMgL;
   out.oxygenMaxMgL = oxygenMaxMgL;
   return out;
@@ -56,11 +56,11 @@ bool RuntimeConfig::applyData(const Data &data)
   autostartOnBoot = data.autostartOnBoot;
   rgaNumMasses = data.rgaNumMasses;
   rgaFilamentOffBeforeTurboStopMs = data.rgaFilamentOffBeforeTurboStopMs;
-  rgaReadyBeforeAcquisitionMs = data.rgaReadyBeforeAcquisitionMs;
-  turboReadyBeforeRgaMs = data.turboReadyBeforeRgaMs;
-  chamberValveToggleIntervalMs = data.chamberValveToggleIntervalMs;
-  minExperimentIntervalMs = data.minExperimentIntervalMs;
-  maxExperimentIntervalMs = data.maxExperimentIntervalMs;
+  rgaReadyBeforeAcquisitionMin = data.rgaReadyBeforeAcquisitionMin;
+  turboReadyBeforeRgaMin = data.turboReadyBeforeRgaMin;
+  chamberValveToggleIntervalMin = data.chamberValveToggleIntervalMin;
+  minExperimentIntervalMin = data.minExperimentIntervalMin;
+  maxExperimentIntervalMin = data.maxExperimentIntervalMin;
   oxygenMinMgL = data.oxygenMinMgL;
   oxygenMaxMgL = data.oxygenMaxMgL;
   return true;
@@ -77,11 +77,11 @@ bool RuntimeConfig::isCommandSettableKey(const char *key) const
   return strcmp(key, "AUTOSTART_ON_BOOT") == 0 ||
          strcmp(key, "RGA_MASSES") == 0 ||
          strcmp(key, "RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS") == 0 ||
-         strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MS") == 0 ||
-         strcmp(key, "TURBO_READY_BEFORE_RGA_MS") == 0 ||
-         strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MS") == 0 ||
-         strcmp(key, "MIN_EXPERIMENT_INTERVAL_MS") == 0 ||
-         strcmp(key, "MAX_EXPERIMENT_INTERVAL_MS") == 0 ||
+         strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MIN") == 0 ||
+         strcmp(key, "TURBO_READY_BEFORE_RGA_MIN") == 0 ||
+         strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MIN") == 0 ||
+         strcmp(key, "MIN_EXPERIMENT_INTERVAL_MIN") == 0 ||
+         strcmp(key, "MAX_EXPERIMENT_INTERVAL_MIN") == 0 ||
          strcmp(key, "OXYGEN_MIN_MG_L") == 0 ||
          strcmp(key, "OXYGEN_MAX_MG_L") == 0;
 }
@@ -113,12 +113,12 @@ bool RuntimeConfig::setValue(const char *key, const char *value, const char **er
     return true;
   }
 
-  if (strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MS") == 0) {
+  if (strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MIN") == 0) {
     if (!parseUnsignedLongValue(value, &unsignedValue)) {
       *errorMessage = "invalid value";
       return false;
     }
-    rgaReadyBeforeAcquisitionMs = unsignedValue;
+    rgaReadyBeforeAcquisitionMin = unsignedValue;
     return true;
   }
 
@@ -131,39 +131,39 @@ bool RuntimeConfig::setValue(const char *key, const char *value, const char **er
     return true;
   }
 
-  if (strcmp(key, "TURBO_READY_BEFORE_RGA_MS") == 0) {
+  if (strcmp(key, "TURBO_READY_BEFORE_RGA_MIN") == 0) {
     if (!parseUnsignedLongValue(value, &unsignedValue)) {
       *errorMessage = "invalid value";
       return false;
     }
-    turboReadyBeforeRgaMs = unsignedValue;
+    turboReadyBeforeRgaMin = unsignedValue;
     return true;
   }
 
-  if (strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MS") == 0) {
+  if (strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MIN") == 0) {
     if (!parseUnsignedLongValue(value, &unsignedValue)) {
       *errorMessage = "invalid value";
       return false;
     }
-    chamberValveToggleIntervalMs = unsignedValue;
+    chamberValveToggleIntervalMin = unsignedValue;
     return true;
   }
 
-  if (strcmp(key, "MIN_EXPERIMENT_INTERVAL_MS") == 0) {
+  if (strcmp(key, "MIN_EXPERIMENT_INTERVAL_MIN") == 0) {
     if (!parseUnsignedLongValue(value, &unsignedValue)) {
       *errorMessage = "invalid value";
       return false;
     }
-    minExperimentIntervalMs = unsignedValue;
+    minExperimentIntervalMin = unsignedValue;
     return true;
   }
 
-  if (strcmp(key, "MAX_EXPERIMENT_INTERVAL_MS") == 0) {
+  if (strcmp(key, "MAX_EXPERIMENT_INTERVAL_MIN") == 0) {
     if (!parseUnsignedLongValue(value, &unsignedValue)) {
       *errorMessage = "invalid value";
       return false;
     }
-    maxExperimentIntervalMs = unsignedValue;
+    maxExperimentIntervalMin = unsignedValue;
     return true;
   }
 
@@ -200,18 +200,18 @@ bool RuntimeConfig::formatValue(const char *key, char *buffer, size_t bufferSize
     for (byte i = 0; i < rgaNumMasses && offset < static_cast<int>(bufferSize); i++) {
       offset += snprintf(buffer + offset, bufferSize - offset, "%s%d", i == 0 ? "" : ",", rgaMasses[i]);
     }
-  } else if (strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MS") == 0) {
-    snprintf(buffer, bufferSize, "CFG,RGA_READY_BEFORE_ACQUISITION_MS=%lu", rgaReadyBeforeAcquisitionMs);
+  } else if (strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MIN") == 0) {
+    snprintf(buffer, bufferSize, "CFG,RGA_READY_BEFORE_ACQUISITION_MIN=%lu", rgaReadyBeforeAcquisitionMin);
   } else if (strcmp(key, "RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS") == 0) {
     snprintf(buffer, bufferSize, "CFG,RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS=%lu", rgaFilamentOffBeforeTurboStopMs);
-  } else if (strcmp(key, "TURBO_READY_BEFORE_RGA_MS") == 0) {
-    snprintf(buffer, bufferSize, "CFG,TURBO_READY_BEFORE_RGA_MS=%lu", turboReadyBeforeRgaMs);
-  } else if (strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MS") == 0) {
-    snprintf(buffer, bufferSize, "CFG,CHAMBER_VALVE_TOGGLE_INTERVAL_MS=%lu", chamberValveToggleIntervalMs);
-  } else if (strcmp(key, "MIN_EXPERIMENT_INTERVAL_MS") == 0) {
-    snprintf(buffer, bufferSize, "CFG,MIN_EXPERIMENT_INTERVAL_MS=%lu", minExperimentIntervalMs);
-  } else if (strcmp(key, "MAX_EXPERIMENT_INTERVAL_MS") == 0) {
-    snprintf(buffer, bufferSize, "CFG,MAX_EXPERIMENT_INTERVAL_MS=%lu", maxExperimentIntervalMs);
+  } else if (strcmp(key, "TURBO_READY_BEFORE_RGA_MIN") == 0) {
+    snprintf(buffer, bufferSize, "CFG,TURBO_READY_BEFORE_RGA_MIN=%lu", turboReadyBeforeRgaMin);
+  } else if (strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MIN") == 0) {
+    snprintf(buffer, bufferSize, "CFG,CHAMBER_VALVE_TOGGLE_INTERVAL_MIN=%lu", chamberValveToggleIntervalMin);
+  } else if (strcmp(key, "MIN_EXPERIMENT_INTERVAL_MIN") == 0) {
+    snprintf(buffer, bufferSize, "CFG,MIN_EXPERIMENT_INTERVAL_MIN=%lu", minExperimentIntervalMin);
+  } else if (strcmp(key, "MAX_EXPERIMENT_INTERVAL_MIN") == 0) {
+    snprintf(buffer, bufferSize, "CFG,MAX_EXPERIMENT_INTERVAL_MIN=%lu", maxExperimentIntervalMin);
   } else if (strcmp(key, "OXYGEN_MIN_MG_L") == 0) {
     snprintf(buffer, bufferSize, "CFG,OXYGEN_MIN_MG_L=%.3f", oxygenMinMgL);
   } else if (strcmp(key, "OXYGEN_MAX_MG_L") == 0) {
