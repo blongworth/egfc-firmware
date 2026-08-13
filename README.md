@@ -156,21 +156,21 @@ The USB serial port carries human-readable boot/debug messages plus these machin
 
 | Prefix | Format | Meaning |
 | --- | --- | --- |
-| `S,` | `S,<state>,SPD=<target>,TURBO=<ready&#124;not ready>,RGA=<on&#124;off>` | Current readable status response. |
+| `S,` | `S,<state>,SPD=<target>,TURBO=<ready/not ready>,RGA=<on/off>` | Current readable status response. |
 | `CFG,` | `CFG,<KEY>=<VALUE>` | Runtime config response. |
-| `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current&#124;NA>` | Detailed turbopump/RGA status response. |
+| `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current/NA>` | Detailed turbopump/RGA status response. |
 | `TP,` | `TP,<raw_total_pressure_current>` | Raw 4-byte signed integer from the RGA `TP?` command. Multiply by `1e-16` for amps. |
 | `ST,` | `ST,<total_pressure_sensitivity_mA_per_Torr>` | RGA stored total-pressure sensitivity factor response from the RGA `ST?` command. |
 | `RE,` | `RE,STATUS=<status_byte>` | RGA error status response. |
-| `PS,` | `PS,STATE=<on&#124;off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
-| `VS,` | `VS,CHAMBER=<C1&#124;C2&#124;Unknown>,FLUSH=<Re&#124;Fl&#124;Unknown>,VALVES=<idle&#124;moving>,PUMP=<on&#124;off>,PWM=<duty_percent>,RPM=<rpm>` | Valve and pump status response. |
-| `V:` | `V:<timestamp>,<C1&#124;C2>,<Re&#124;Fl>` | Valve position after a change. Also written to the SD data file. |
+| `PS,` | `PS,STATE=<on/off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
+| `VS,` | `VS,CHAMBER=<C1/C2/Unknown>,FLUSH=<Re/Fl/Unknown>,VALVES=<idle/moving>,PUMP=<on/off>,PWM=<duty_percent>,RPM=<rpm>` | Valve and pump status response. |
+| `V:` | `V:<timestamp>,<C1/C2>,<Re/Fl>` | Valve position after a change. Also written to the SD data file. |
 | `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<pressure_mbar>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
 | `OK,` | `OK,<command>` | Immediate command completed. |
 | `ACK,` | `ACK,<command>` | Transition command accepted. |
 | `DONE,` | `DONE,<command>` | Transition command reached its target state. |
 | `ERR,` | `ERR,<command>,<message>` | Command rejected. |
-| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. For payload `3`, the row is `!:<timestamp>,<turbo_error>,<turbo_speed_Hz>,<turbo_power_W>,<turbo_voltage>,<turbo_electronics_temp_C>,<turbo_bottom_temp_C>,<turbo_motor_temp_C>,<rga_filament>,<raw_total_pressure_current&#124;NA>,<pump_rpm>`. |
+| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. For payload `3`, the row is `!:<timestamp>,<turbo_error>,<turbo_speed_Hz>,<turbo_power_W>,<turbo_voltage>,<turbo_electronics_temp_C>,<turbo_bottom_temp_C>,<turbo_motor_temp_C>,<rga_filament>,<raw_total_pressure_current/NA>,<pump_rpm>`. |
 | `R:` | `R:<timestamp>,<mass>,<current>` | One RGA mass reading. Also written to the SD data file. |
 
 Timestamps are ISO-8601-style UTC strings from the Teensy RTC, for example:
