@@ -15,6 +15,11 @@ public:
   bool turnFilamentOff(unsigned long timeoutMs);
   bool turnFilamentOn(unsigned long timeoutMs);
   bool ensureFilamentOff(int maxAttempts, unsigned long timeoutMs);
+  void requestFilamentOffNonBlocking();
+  bool filamentOffAckAvailable() const;
+  void discardFilamentOffAck();
+  void requestFilamentStatusNonBlocking();
+  bool readFilamentStatusNonBlocking(float *status);
   bool clearElectrometer(unsigned long timeoutMs);
   bool calibrateAll(unsigned long timeoutMs);
   bool prepareForMeasurements(int noiseFloor, unsigned long timeoutMs);
@@ -36,6 +41,8 @@ public:
 
 private:
   HardwareSerial &serial;
+  char filamentStatusBuffer[16] = {};
+  size_t filamentStatusLength = 0;
 
   size_t write(uint8_t value);
   size_t write(const char *command);

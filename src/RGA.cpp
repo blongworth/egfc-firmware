@@ -119,6 +119,70 @@ bool RGADevice::ensureFilamentOff(int maxAttempts, unsigned long timeoutMs)
   return false;
 }
 
+void RGADevice::requestFilamentOffNonBlocking()
+{
+  while (serial.available()) {
+    serial.read();
+  }
+  write("FL0\r");
+}
+
+bool RGADevice::filamentOffAckAvailable() const
+{
+  return serial.available() >= 3;
+}
+
+void RGADevice::discardFilamentOffAck()
+{
+  char statusBytes[4];
+  readBytes(statusBytes, 3);
+}
+
+void RGADevice::requestFilamentStatusNonBlocking()
+{
+  while (serial.available()) {
+    serial.read();
+  }
+  filamentStatusLength = 0;
+  filamentStatusBuffer[0] = '\0';
+  write("FL?\r");
+}
+
+bool RGADevice::readFilamentStatusNonBlocking(float *status)
+{
+  while (serial.available()) {
+    char c = serial.read();
+    if (c == '\r' || c == '\n') {
+      if (filamentStatusLength == 0) {
+        continue;
+      }
+      filamentStatusBuffer[filamentStatusLength] = '\0';
+      const char *valueText = filamentStatusBuffer;
+      if ((*valueText < '0' || *valueText > '9') &&
+          *valueText != '-' &&
+          *valueText != '+' &&
+          *valueText != '.') {
+        valueText++;
+      }
+      if (status) {
+        *status = atof(valueText);
+      }
+      filamentStatusLength = 0;
+      filamentStatusBuffer[0] = '\0';
+      return true;
+    }
+
+    if (filamentStatusLength < sizeof(filamentStatusBuffer) - 1) {
+      filamentStatusBuffer[filamentStatusLength++] = c;
+    } else {
+      filamentStatusLength = 0;
+      filamentStatusBuffer[0] = '\0';
+    }
+  }
+
+  return false;
+}
+
 bool RGADevice::clearElectrometer(unsigned long timeoutMs)
 {
   write("CL\r");

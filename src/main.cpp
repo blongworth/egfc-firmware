@@ -111,6 +111,21 @@ bool autostartPending = false;
 bool acquisitionStartPending = false;
 elapsedMillis acquisitionStartTimer;
 
+enum class TurboShutdownState {
+  Idle,
+  WaitFilamentOffAck,
+  WaitFilamentStatus,
+  DwellAfterFilamentOff,
+  StopTurbo,
+  WaitTurboStopped,
+  Failed
+};
+
+TurboShutdownState turboShutdownState = TurboShutdownState::Idle;
+elapsedMillis turboShutdownTimer;
+elapsedMillis turboShutdownPollTimer;
+uint8_t turboShutdownFilamentOffAttempts = 0;
+
 enum class TurboStartupState {
   Idle,
   SetSpeed,
@@ -153,7 +168,11 @@ void updateTurboStartup();
 void updateAutostart();
 void beginAcquisitionStartDelay(bool resetTimer);
 void updateAcquisitionStartDelay();
-bool GEMS_Stop();
+void beginTurboShutdown();
+void updateTurboShutdown();
+void retryTurboShutdownFilamentOff();
+void failTurboShutdown(const char *message);
+void finishTurboShutdown();
 bool startRGA(bool startAcquisition);
 void StatusMsg(int M);
 void readSerialCommand();
@@ -188,9 +207,7 @@ bool beginTransition(const char *command);
 void clearTransition();
 void stopAcquisition();
 void finishPendingRgaScanBeforeStop();
-void waitAfterFilamentOffBeforeTurboStop();
 bool stopRgaOnly();
-bool stopTurboOnly();
 bool isCommand(const char *command, const char *modern, const char *legacy);
 void printDigits(int digits);
 void updateRgaAcquisition();
@@ -368,21 +385,12 @@ void loop() {
     digitalWrite(LED_PIN, HIGH);
   }
 
-  // Stop Turbo Mass Spec and ADV
   if (stopRequested) {
     stopRequested = false;
-    digitalWrite(LED_PIN, LOW);
-    if (GEMS_Stop()) {
-      setSystemState(SystemState::Off);
-      sendDone(activeTransitionCommand);
-    } else {
-      setSystemState(SystemState::Error);
-      sendErr(activeTransitionCommand, "RGA filament did not confirm off");
-    }
-    clearTransition();
-    sendStatus();
-    digitalWrite(LED_PIN, LOW);
+    beginTurboShutdown();
   }
+
+  updateTurboShutdown();
 
   // cycle file every 4 hours
   if (hour() % 4 == 0)
@@ -889,11 +897,12 @@ void handleCommand(char *command) {
   }
 
   if (strcmp(command, "TOFF") == 0) {
-    if (!stopTurboOnly()) {
-      sendErr("TOFF", "RGA filament did not confirm off");
+    if (!beginTransition("TOFF")) {
+      sendErr("TOFF", "Busy");
       return;
     }
-    sendOk("TOFF");
+    beginTurboShutdown();
+    sendAck("TOFF");
     return;
   }
 
@@ -1471,28 +1480,139 @@ bool stopRgaOnly() {
   return true;
 }
 
-void waitAfterFilamentOffBeforeTurboStop() {
-  if (runtimeConfig.rgaFilamentOffBeforeTurboStopMs == 0) {
+void beginTurboShutdown() {
+  if (turboShutdownState != TurboShutdownState::Idle) {
     return;
   }
 
-  Serial.print("Waiting after filament off before turbo stop: ");
-  Serial.print(runtimeConfig.rgaFilamentOffBeforeTurboStopMs);
-  Serial.println(" ms");
-  delay(runtimeConfig.rgaFilamentOffBeforeTurboStopMs);
+  stopAcquisition();
+  turboStartupState = TurboStartupState::Idle;
+  setSystemState(SystemState::Stopping);
+  StatusMsg(6);
+  digitalWrite(LED_PIN, LOW);
+  turboShutdownFilamentOffAttempts = 0;
+  retryTurboShutdownFilamentOff();
 }
 
-bool stopTurboOnly() {
-  stopAcquisition();
-  if (!rga.ensureFilamentOff(10, 5000)) {
-    Serial.println("RGA filament did not confirm off; turbo stop skipped");
-    return false;
+void retryTurboShutdownFilamentOff() {
+  turboShutdownFilamentOffAttempts++;
+  rga.requestFilamentOffNonBlocking();
+  turboShutdownTimer = 0;
+  turboShutdownPollTimer = 0;
+  turboShutdownState = TurboShutdownState::WaitFilamentOffAck;
+}
+
+void updateTurboShutdown() {
+  switch (turboShutdownState) {
+    case TurboShutdownState::Idle:
+      return;
+
+    case TurboShutdownState::WaitFilamentOffAck:
+      if (rga.filamentOffAckAvailable()) {
+        rga.discardFilamentOffAck();
+        rga.requestFilamentStatusNonBlocking();
+        turboShutdownTimer = 0;
+        turboShutdownState = TurboShutdownState::WaitFilamentStatus;
+        return;
+      }
+
+      if (turboShutdownTimer >= RGA_ERROR_TIMEOUT_MS) {
+        if (turboShutdownFilamentOffAttempts < 10) {
+          retryTurboShutdownFilamentOff();
+        } else {
+          failTurboShutdown("RGA filament did not confirm off");
+        }
+      }
+      return;
+
+    case TurboShutdownState::WaitFilamentStatus: {
+      float filament = 1.0f;
+      if (rga.readFilamentStatusNonBlocking(&filament)) {
+        if (filament <= 0.01f) {
+          Serial.println("Filament off");
+          if (runtimeConfig.rgaFilamentOffBeforeTurboStopMs == 0) {
+            turboShutdownState = TurboShutdownState::StopTurbo;
+          } else {
+            Serial.print("Waiting after filament off before turbo stop: ");
+            Serial.print(runtimeConfig.rgaFilamentOffBeforeTurboStopMs);
+            Serial.println(" ms");
+            turboShutdownTimer = 0;
+            turboShutdownState = TurboShutdownState::DwellAfterFilamentOff;
+          }
+          return;
+        }
+
+        if (turboShutdownFilamentOffAttempts < 10) {
+          retryTurboShutdownFilamentOff();
+        } else {
+          failTurboShutdown("RGA filament did not confirm off");
+        }
+        return;
+      }
+
+      if (turboShutdownTimer >= RGA_ERROR_TIMEOUT_MS) {
+        if (turboShutdownFilamentOffAttempts < 10) {
+          retryTurboShutdownFilamentOff();
+        } else {
+          failTurboShutdown("RGA filament status timeout");
+        }
+      }
+      return;
+    }
+
+    case TurboShutdownState::DwellAfterFilamentOff:
+      if (turboShutdownTimer >= runtimeConfig.rgaFilamentOffBeforeTurboStopMs) {
+        turboShutdownState = TurboShutdownState::StopTurbo;
+      }
+      return;
+
+    case TurboShutdownState::StopTurbo:
+      StatusMsg(3);
+      StatusMsg(7);
+      digitalWrite(LED_PIN, HIGH);
+      StatusMsg(8);
+      Serial.println("Stop turbopump");
+      turbo.stop();
+      turboShutdownPollTimer = TURBO_STARTUP_POLL_MS;
+      turboShutdownState = TurboShutdownState::WaitTurboStopped;
+      return;
+
+    case TurboShutdownState::WaitTurboStopped:
+      if (turboShutdownPollTimer >= TURBO_STARTUP_POLL_MS) {
+        turboShutdownPollTimer = 0;
+        TurboBasicStatus turboStatus = turbo.readBasicStatus();
+        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+        if (turboStatus.actualSpeedHz <= 1) {
+          finishTurboShutdown();
+        }
+      }
+      return;
+
+    case TurboShutdownState::Failed:
+      return;
   }
-  waitAfterFilamentOffBeforeTurboStop();
-  turboStartupState = TurboStartupState::Idle;
-  turbo.stop();
+}
+
+void finishTurboShutdown() {
+  StatusMsg(3);
+  StatusMsg(9);
   setSystemState(SystemState::Off);
-  return true;
+  sendDone(activeTransitionCommand);
+  clearTransition();
+  sendStatus();
+  digitalWrite(LED_PIN, LOW);
+  turboShutdownState = TurboShutdownState::Idle;
+}
+
+void failTurboShutdown(const char *message) {
+  Serial.println(message);
+  StatusMsg(5);
+  setSystemState(SystemState::Error);
+  sendErr(activeTransitionCommand, message);
+  clearTransition();
+  sendStatus();
+  digitalWrite(LED_PIN, LOW);
+  turboShutdownState = TurboShutdownState::Failed;
 }
 
 bool isCommand(const char *command, const char *modern, const char *legacy) {
@@ -1636,44 +1756,6 @@ void updateTurboStartup() {
       turboStartupState = TurboStartupState::Idle;
       return;
   }
-}
-
-bool GEMS_Stop() {
-  turboStartupState = TurboStartupState::Idle;
-  stopAcquisition();
-  setSystemState(SystemState::Stopping);
-  StatusMsg(6);
-
-  if (!rga.ensureFilamentOff(10, 5000)) {
-    Serial.println("RGA filament did not confirm off; turbo stop skipped");
-    StatusMsg(5);
-    return false;
-  }
-
-  Serial.println("Filament off");
-  waitAfterFilamentOffBeforeTurboStop();
-
-  StatusMsg(3);
-  StatusMsg(7);
-  digitalWrite(LED_PIN, HIGH);
-  StatusMsg(8);
-
-  Serial.println("Stop turbopump");
-
-  turbo.stop();
-
-  int TurboSpeed = 999;
-  while (TurboSpeed > 1) {
-    TurboBasicStatus turboStatus = turbo.readBasicStatus();
-    TurboSpeed = turboStatus.actualSpeedHz;
-    digitalWrite(LED_PIN, HIGH);
-    delay(1000);
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
-  }
-  StatusMsg(3);
-  StatusMsg(9);
-  return true;
 }
 
 bool startRGA(bool startAcquisition)
