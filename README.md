@@ -1,4 +1,4 @@
-# EGFC GEMS Lander Firmware
+# EGFC Lander Firmware
 
 Firmware for the eelgrass flux chamber lander controller. The firmware controls an SRS RGA, a turbopump, a SCALUP sonde, a PWM/RPM pump, and two H-bridge-driven valves. It logs RGA, SCALUP, valve, and pump records to the built-in SD card and can communicate with the surface over USB serial or Ethernet/UDP.
 
