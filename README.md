@@ -1,17 +1,6 @@
 # EGFC GEMS Lander Firmware
 
-Firmware for the eelgrass flux chamber GEMS lander controller. The firmware controls an SRS RGA over `Serial4`, a turbopump over USB host serial, a SCALUP sonde over `Serial3`, a PWM/RPM pump, and two H-bridge-driven valves. It logs RGA, SCALUP, valve, and pump records to the built-in SD card and can communicate with the surface over USB serial or Ethernet/UDP.
-
-## TODO
-
-* remove blocking code (RGA DAQ, turbo shutdown)
-* move user-tunable constants into a configuration file or persistent settings store
-* Field config
-* Electron Multiplier mode
-* Total Pressure
-* Autostart
-* Minimum chamber time
-* Integration with surface teensy via enet
+Firmware for the eelgrass flux chamber lander controller. The firmware controls an SRS RGA, a turbopump, a SCALUP sonde, a PWM/RPM pump, and two H-bridge-driven valves. It logs RGA, SCALUP, valve, and pump records to the built-in SD card and can communicate with the surface over USB serial or Ethernet/UDP.
 
 ## Project Layout
 
@@ -29,13 +18,12 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 ## Hardware and Defaults
 
 - Board: Teensy 4.1
-- Debug/surface serial: `Serial` at `9600`
 - Main firmware configuration is in `src/Config.h`
 - Loop-rate logging is disabled by default with `ENABLE_LOOP_RATE_LOG = 0`; set it to `1` to print loop frequency once per second.
 - Full-system autostart is disabled by default with `AUTOSTART_ON_BOOT = false`; it starts the normal `RUN` sequence immediately after boot setup completes.
 - RGA serial: `Serial4` at `28800`, `SERIAL_8N1`
 - SCALUP serial: `Serial3` at `28800`, `SERIAL_8N1`
-- Turbopump serial: USB host serial at `9600`
+- Turbopump serial: USB host serial
 - SD card: `BUILTIN_SDCARD`
 - Default turbopump speed: `1200 Hz`
 - Pump PWM output: pin `7`, default duty `100%`, startup disabled with `PUMP_ON_AT_STARTUP = false`, default PWM frequency `20000 Hz`, 8-bit resolution
@@ -52,7 +40,7 @@ Firmware for the eelgrass flux chamber GEMS lander controller. The firmware cont
 - Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`.
 - Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `20000 ms`, minimum experiment interval before oxygen checks `30000 ms`, maximum experiment interval `60000 ms`, flush interval `30000 ms` per chamber.
 - Oxygen flush limits use the latest SCALUP dissolved oxygen reading: minimum `2.0 mg/L`, maximum `12.0 mg/L`.
-- SCALUP raw serial echo is currently enabled for debugging.
+- SCALUP raw serial echo may be enabled for debugging.
 
 ## Build and Upload
 
@@ -64,7 +52,9 @@ pio run -t upload
 pio device monitor
 ```
 
-The default environment is `teensy41_ethernet`. To build without Ethernet, use `pio run -e teensy41`.
+or use the PlatformIO VSCode extension
+
+The default environment is `teensy41_ethernet`, which enables communication with the surface via Ethernet. To build without Ethernet, use `pio run -e teensy41`.
 
 ## Commands
 
@@ -162,25 +152,25 @@ R:<timestamp>,<mass>,<current>
 
 ## Serial Data Output
 
-The USB serial port runs at `9600`. It carries human-readable boot/debug messages plus these machine-readable records:
+The USB serial port carries human-readable boot/debug messages plus these machine-readable records:
 
 | Prefix | Format | Meaning |
 | --- | --- | --- |
-| `S,` | `S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>` | Current readable status response. |
+| `S,` | `S,<state>,SPD=<target>,TURBO=<ready&#124;not ready>,RGA=<on&#124;off>` | Current readable status response. |
 | `CFG,` | `CFG,<KEY>=<VALUE>` | Runtime config response. |
-| `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current|NA>` | Detailed turbopump/RGA status response. |
+| `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current&#124;NA>` | Detailed turbopump/RGA status response. |
 | `TP,` | `TP,<raw_total_pressure_current>` | Raw 4-byte signed integer from the RGA `TP?` command. Multiply by `1e-16` for amps. |
 | `ST,` | `ST,<total_pressure_sensitivity_mA_per_Torr>` | RGA stored total-pressure sensitivity factor response from the RGA `ST?` command. |
 | `RE,` | `RE,STATUS=<status_byte>` | RGA error status response. |
-| `PS,` | `PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
-| `VS,` | `VS,CHAMBER=<C1|C2|Unknown>,FLUSH=<Re|Fl|Unknown>,VALVES=<idle|moving>,PUMP=<on|off>,PWM=<duty_percent>,RPM=<rpm>` | Valve and pump status response. |
-| `V:` | `V:<timestamp>,<C1|C2>,<Re|Fl>` | Valve position after a change. Also written to the SD data file. |
+| `PS,` | `PS,STATE=<on&#124;off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
+| `VS,` | `VS,CHAMBER=<C1&#124;C2&#124;Unknown>,FLUSH=<Re&#124;Fl&#124;Unknown>,VALVES=<idle&#124;moving>,PUMP=<on&#124;off>,PWM=<duty_percent>,RPM=<rpm>` | Valve and pump status response. |
+| `V:` | `V:<timestamp>,<C1&#124;C2>,<Re&#124;Fl>` | Valve position after a change. Also written to the SD data file. |
 | `P:` | `P:<rtc_timestamp>,<scalup_timestamp>,<temp_degC>,<sal_PSU>,<pressure_mbar>,<oxygen_mg_L>,<pH>` | SCALUP sonde reading. Also written to the SD data file. |
 | `OK,` | `OK,<command>` | Immediate command completed. |
 | `ACK,` | `ACK,<command>` | Transition command accepted. |
 | `DONE,` | `DONE,<command>` | Transition command reached its target state. |
 | `ERR,` | `ERR,<command>,<message>` | Command rejected. |
-| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. For payload `3`, the row is `!:<timestamp>,<turbo_error>,<turbo_speed_Hz>,<turbo_power_W>,<turbo_voltage>,<turbo_electronics_temp_C>,<turbo_bottom_temp_C>,<turbo_motor_temp_C>,<rga_filament>,<raw_total_pressure_current|NA>,<pump_rpm>`. |
+| `!:` | `!:<timestamp>,<payload>` | Status event or detailed status report. For payload `3`, the row is `!:<timestamp>,<turbo_error>,<turbo_speed_Hz>,<turbo_power_W>,<turbo_voltage>,<turbo_electronics_temp_C>,<turbo_bottom_temp_C>,<turbo_motor_temp_C>,<rga_filament>,<raw_total_pressure_current&#124;NA>,<pump_rpm>`. |
 | `R:` | `R:<timestamp>,<mass>,<current>` | One RGA mass reading. Also written to the SD data file. |
 
 Timestamps are ISO-8601-style UTC strings from the Teensy RTC, for example:
