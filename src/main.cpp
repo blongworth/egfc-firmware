@@ -861,6 +861,38 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "VC1") == 0 || strcmp(command, "VC2") == 0 ||
+      strcmp(command, "VFL") == 0 || strcmp(command, "VRE") == 0) {
+    if (systemState == SystemState::Acquiring) {
+      sendErr(command, "Acquiring");
+      return;
+    }
+    if (activeTransitionCommand[0] != '\0') {
+      sendErr(command, "Busy");
+      return;
+    }
+    if (manualFlushActive) {
+      sendErr(command, "Manual flush active");
+      return;
+    }
+
+    if (strcmp(command, "VC1") == 0) {
+      valves.moveChamberToA();
+      logValveChange("MANUAL_CHAMBER_C1");
+    } else if (strcmp(command, "VC2") == 0) {
+      valves.moveChamberToB();
+      logValveChange("MANUAL_CHAMBER_C2");
+    } else if (strcmp(command, "VFL") == 0) {
+      valves.moveFlushToFlush();
+      logValveChange("MANUAL_FLUSH_FL");
+    } else {
+      valves.moveFlushToRecirculate();
+      logValveChange("MANUAL_FLUSH_RE");
+    }
+    sendOk(command);
+    return;
+  }
+
   if (strncmp(command, "PMP", 3) == 0) {
     char *end = nullptr;
     float duty = strtof(command + 3, &end);
