@@ -1787,32 +1787,23 @@ bool startRGA(bool startAcquisition)
   return true;
 }
 
-#ifdef USE_ETHERNET
-void StatusMsg(int M) {
+void logStatusRow(const char *statusRow) {
+  if (dataFile) {
+    dataFile.println(statusRow);
+  } else {
+    Serial.print("Could not open SD file: ");
+    Serial.print(FileName);
+    Serial.println(" for status write!");
+  }
+}
+
+void buildStatusRow(char *statusRow, size_t statusRowSize, int M) {
   char iso8601Time[25];
   getTimeISO8601(iso8601Time, sizeof(iso8601Time));
-  Udp.beginPacket(destinationIP, destinationPort);
-  Udp.print("!:");
-  Udp.print(iso8601Time);
-  Udp.print(",");
+
   if (M == 3) {
     TurboDetailedStatus turboStatus = turbo.readDetailedStatus();
-    Udp.print(turboStatus.error);
-    Udp.print(",");
-    Udp.print(turboStatus.actualSpeedHz);
-    Udp.print(",");
-    Udp.print(turboStatus.drivePowerW);
-    Udp.print(",");
-    Udp.print(turboStatus.driveVoltage);
-    Udp.print(",");
-    Udp.print(turboStatus.electronicsTemp);
-    Udp.print(",");
-    Udp.print(turboStatus.pumpBottomTemp);
-    Udp.print(",");
-    Udp.print(turboStatus.motorTemp);
     float SRS = rga.filamentStatus();
-    Udp.print(",");
-    Udp.print(SRS);
     int32_t totalPressureRaw = 0;
     char totalPressureText[16];
     if (rga.totalPressureRaw(RGA_TOTAL_PRESSURE_TIMEOUT_MS, &totalPressureRaw)) {
@@ -1820,58 +1811,35 @@ void StatusMsg(int M) {
     } else {
       snprintf(totalPressureText, sizeof(totalPressureText), "NA");
     }
-    Udp.print(",");
-    Udp.print(totalPressureText);
-    Udp.print(",");
-    Udp.print(pump.rpm());
+    snprintf(statusRow, statusRowSize, "!:%s,%d,%d,%d,%d,%d,%d,%d,%.2f,%s,%.2f",
+             iso8601Time, turboStatus.error, turboStatus.actualSpeedHz, turboStatus.drivePowerW,
+             turboStatus.driveVoltage, turboStatus.electronicsTemp, turboStatus.pumpBottomTemp,
+             turboStatus.motorTemp, SRS, totalPressureText, pump.rpm());
+  } else {
+    snprintf(statusRow, statusRowSize, "!:%s,%d", iso8601Time, M);
   }
-  else {
-    Udp.print(M);
-  }
+}
+
+#ifdef USE_ETHERNET
+void StatusMsg(int M) {
+  char statusRow[200];
+  buildStatusRow(statusRow, sizeof(statusRow), M);
+
+  Udp.beginPacket(destinationIP, destinationPort);
+  Udp.print(statusRow);
   Udp.write(13);
   Udp.endPacket();
+
+  logStatusRow(statusRow);
 }
 #else
 void StatusMsg(int M) {
-  char iso8601Time[25];
-  getTimeISO8601(iso8601Time, sizeof(iso8601Time));
-  Serial.print("!:");
-  Serial.print(iso8601Time);
-  Serial.print(",");
-  if (M == 3) {
-    TurboDetailedStatus turboStatus = turbo.readDetailedStatus();
-    Serial.print(turboStatus.error);
-    Serial.print(",");
-    Serial.print(turboStatus.actualSpeedHz);
-    Serial.print(",");
-    Serial.print(turboStatus.drivePowerW);
-    Serial.print(",");
-    Serial.print(turboStatus.driveVoltage);
-    Serial.print(",");
-    Serial.print(turboStatus.electronicsTemp);
-    Serial.print(",");
-    Serial.print(turboStatus.pumpBottomTemp);
-    Serial.print(",");
-    Serial.print(turboStatus.motorTemp);
-    float SRS = rga.filamentStatus();
-    Serial.print(",");
-    Serial.print(SRS);
-    int32_t totalPressureRaw = 0;
-    char totalPressureText[16];
-    if (rga.totalPressureRaw(RGA_TOTAL_PRESSURE_TIMEOUT_MS, &totalPressureRaw)) {
-      snprintf(totalPressureText, sizeof(totalPressureText), "%ld", static_cast<long>(totalPressureRaw));
-    } else {
-      snprintf(totalPressureText, sizeof(totalPressureText), "NA");
-    }
-    Serial.print(",");
-    Serial.print(totalPressureText);
-    Serial.print(",");
-    Serial.print(pump.rpm());
-  }
-  else {
-    Serial.print(M);
-  }
-  Serial.println();
+  char statusRow[200];
+  buildStatusRow(statusRow, sizeof(statusRow), M);
+
+  Serial.println(statusRow);
+
+  logStatusRow(statusRow);
 }
 #endif
 
