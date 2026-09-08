@@ -242,7 +242,7 @@ void setup() {
     delay(5000);
   }
 
-  Serial.printf("\n\nGEMS Lander %s \n", compileTime);
+  Serial.printf("\n\nGEMS Lander v%s %s \n", FIRMWARE_VERSION, compileTime);
 
   rga.begin(RGA_BAUD, SERIAL_8N1);
   scalup.begin(SCALUP_BAUD);
@@ -459,6 +459,9 @@ void createNewDataFile()
   if (!dataFile) {
     Serial.print("Could not create new SD file: ");
     Serial.println(FileName);
+  } else {
+    dataFile.printf("#:version,%s,%s\n", FIRMWARE_VERSION, compileTime);
+    dataFile.flush();
   }
   Serial.print("New SD file: ");
   Serial.println(FileName);
