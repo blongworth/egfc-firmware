@@ -198,6 +198,7 @@ bool turnElectronMultiplierOff();
 bool handleConfigCommand(char *command);
 bool handleConfigStoreCommand(const char *command);
 bool configChangeAllowed();
+bool valveCommandAllowed(bool manualValveMove, const char **reason);
 void sendConfigAll();
 void sendConfigValue(const char *key);
 void sendResponse(const char *response);
@@ -846,12 +847,9 @@ void handleCommand(char *command) {
   }
 
   if (strcmp(command, "FON") == 0) {
-    if (systemState == SystemState::Acquiring) {
-      sendErr("FON", "Acquiring");
-      return;
-    }
-    if (activeTransitionCommand[0] != '\0') {
-      sendErr("FON", "Busy");
+    const char *reason = nullptr;
+    if (!valveCommandAllowed(false, &reason)) {
+      sendErr("FON", reason);
       return;
     }
     startManualFlush();
@@ -867,18 +865,15 @@ void handleCommand(char *command) {
 
   if (strcmp(command, "VC1") == 0 || strcmp(command, "VC2") == 0 ||
       strcmp(command, "VFL") == 0 || strcmp(command, "VRE") == 0) {
-    if (systemState == SystemState::Acquiring) {
-      sendErr(command, "Acquiring");
+    const char *reason = nullptr;
+    if (!valveCommandAllowed(true, &reason)) {
+      sendErr(command, reason);
       return;
     }
-    if (activeTransitionCommand[0] != '\0') {
-      sendErr(command, "Busy");
-      return;
-    }
-    if (manualFlushActive) {
-      sendErr(command, "Manual flush active");
-      return;
-    }
+
+    // a manual move wins over the startup preflush routine
+    valvePreflushEnabled = false;
+    valvePreflushActive = false;
 
     if (strcmp(command, "VC1") == 0) {
       valves.moveChamberToA();
@@ -1152,6 +1147,28 @@ bool configChangeAllowed() {
   return systemState != SystemState::Acquiring &&
          systemState != SystemState::AcquisitionStarting &&
          activeTransitionCommand[0] == '\0';
+}
+
+// Valve moves share no hardware with the turbopump or RGA, so an active
+// transition does not block them. Only the acquisition valve schedule, manual
+// flushing, and a move already in progress do.
+bool valveCommandAllowed(bool manualValveMove, const char **reason) {
+  if (systemState == SystemState::Acquiring) {
+    *reason = "Acquiring";
+    return false;
+  }
+
+  if (manualValveMove && manualFlushActive) {
+    *reason = "Manual flush active";
+    return false;
+  }
+
+  if (valves.isMoving()) {
+    *reason = "Valves moving";
+    return false;
+  }
+
+  return true;
 }
 
 void sendConfigAll() {

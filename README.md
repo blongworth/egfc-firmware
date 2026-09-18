@@ -82,12 +82,12 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `VSTAT` | Query current valve positions, valve motion state, and pump PWM/RPM status. |
 | `PON` | Turn pump PWM output on at the configured/current duty setting. |
 | `POFF` | Turn pump PWM output off. |
-| `FON` | Start manual chamber flushing: set flush valve to `Fl`, start on `C1`, then alternate `C1`/`C2` every `FLUSH_INTERVAL_MIN`. Rejected while acquiring or busy. |
+| `FON` | Start manual chamber flushing: set flush valve to `Fl`, start on `C1`, then alternate `C1`/`C2` every `FLUSH_INTERVAL_MIN`. Rejected while acquiring or while the valves are moving. Accepted during turbopump and RGA startup. |
 | `FOFF` | Stop manual chamber flushing or startup valve exercise and set flush valve to `Re`. |
-| `VC1` | Manually move the chamber valve to `C1`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, busy, or `FON` flushing is active. |
-| `VC2` | Manually move the chamber valve to `C2`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, busy, or `FON` flushing is active. |
-| `VFL` | Manually move the flush valve to `Fl`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, busy, or `FON` flushing is active. |
-| `VRE` | Manually move the flush valve to `Re`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, busy, or `FON` flushing is active. |
+| `VC1` | Manually move the chamber valve to `C1`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, while `FON` flushing is active, or while the valves are moving. Accepted during turbopump and RGA startup, and cancels the startup preflush routine. |
+| `VC2` | Manually move the chamber valve to `C2`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, while `FON` flushing is active, or while the valves are moving. Accepted during turbopump and RGA startup, and cancels the startup preflush routine. |
+| `VFL` | Manually move the flush valve to `Fl`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, while `FON` flushing is active, or while the valves are moving. Accepted during turbopump and RGA startup, and cancels the startup preflush routine. |
+| `VRE` | Manually move the flush valve to `Re`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, while `FON` flushing is active, or while the valves are moving. Accepted during turbopump and RGA startup, and cancels the startup preflush routine. |
 | `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `TON` | Start turbopump only. |
 | `TOFF` | Stop acquisition, then stop turbo only if RGA is off. |
@@ -208,7 +208,7 @@ Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes tur
 4. If needed, set time with `TIME<unix>` (`T<unix>` is still accepted).
 5. Start the full measurement sequence with `RUN` (`!Z11` is still accepted), or set `AUTOSTART_ON_BOOT = true` to start automatically after boot setup.
 6. The firmware sets turbopump speed, starts the turbopump, checks for readiness, waits `TURBO_READY_BEFORE_RGA_MIN`, turns on the RGA filament, waits `RGA_READY_BEFORE_ACQUISITION_MIN`, then begins mass scans. These dwells apply to `RUN`, including boot autostart.
-7. If `PREFLUSH_ON_STARTUP` and `PUMP_ON_AT_STARTUP` are both true, preflush alternates staggered chamber and flush valve changes before acquisition starts. Preflush is off by default.
+7. If `PREFLUSH_ON_STARTUP` and `PUMP_ON_AT_STARTUP` are both true, preflush alternates staggered chamber and flush valve changes before acquisition starts. Preflush is off by default, and a manual valve command (`VC1`, `VC2`, `VFL`, `VRE`) or `FON` cancels it.
 8. During acquisition, the valve experiment starts with flush recirculating and chamber A selected, toggles the chamber valve on the configured interval, then flushes chamber A and chamber B before starting the next experiment.
 9. RGA, SCALUP, valve, and pump rows are printed, written to SD, and sent over UDP if Ethernet is enabled.
 10. Stop with `OFF` (`!Z20`, `!Z21`, and `!Z22` are still accepted). This stops acquisition, verifies the RGA filament is off, waits `RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS`, then stops the turbopump.
