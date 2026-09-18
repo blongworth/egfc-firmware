@@ -10,6 +10,7 @@ public:
 
   struct Data {
     bool autostartOnBoot;
+    bool preflushOnStartup;
     byte rgaMasses[MAX_RGA_MASSES];
     byte rgaNumMasses;
     unsigned long rgaFilamentOffBeforeTurboStopMs;
@@ -33,6 +34,7 @@ public:
   bool formatValue(const char *key, char *buffer, size_t bufferSize) const;
 
   bool autostartOnBoot = AUTOSTART_ON_BOOT;
+  bool preflushOnStartup = PREFLUSH_ON_STARTUP;
   byte rgaMasses[MAX_RGA_MASSES] = {};
   byte rgaNumMasses = 0;
   unsigned long rgaFilamentOffBeforeTurboStopMs = RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS;

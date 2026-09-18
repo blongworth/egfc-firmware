@@ -64,6 +64,8 @@ const unsigned long VALVE_MOVE_TIME_MS = 10000;
 const unsigned long MILLISECONDS_PER_MINUTE = 60000UL;
 // time to measure on each chamber
 const unsigned long CHAMBER_VALVE_TOGGLE_INTERVAL_MIN = 15;
+// run the staggered valve preflush routine at startup
+const bool PREFLUSH_ON_STARTUP = false;
 // time between staggered valve changes before acquisition starts
 const unsigned long PREFLUSH_VALVE_INTERVAL_MS = 30000;
 // earliest time oxygen can trigger a flush

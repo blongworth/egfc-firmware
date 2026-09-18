@@ -552,7 +552,8 @@ void startValveFlush() {
 }
 
 void updateValvePreflush() {
-  if (!valvePreflushEnabled || !PUMP_ON_AT_STARTUP || !pumpEnabled) {
+  if (!valvePreflushEnabled || !runtimeConfig.preflushOnStartup ||
+      !PUMP_ON_AT_STARTUP || !pumpEnabled) {
     valvePreflushActive = false;
     return;
   }
@@ -1155,6 +1156,7 @@ bool configChangeAllowed() {
 
 void sendConfigAll() {
   sendConfigValue("AUTOSTART_ON_BOOT");
+  sendConfigValue("PREFLUSH_ON_STARTUP");
   sendConfigValue("PUMP_ON_AT_STARTUP");
   sendConfigValue("RGA_MASSES");
   sendConfigValue("RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS");
