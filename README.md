@@ -80,8 +80,8 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `EMOFF` | Turn off the RGA electron multiplier. Rejected while acquiring. |
 | `PSTAT` | Query pump PWM/RPM status. |
 | `VSTAT` | Query current valve positions, valve motion state, and pump PWM/RPM status. |
-| `PON` | Turn pump PWM output on at the configured/current duty setting. |
-| `POFF` | Turn pump PWM output off. |
+| `PON` | Turn pump PWM output on at the configured/current duty setting. Rejected while acquiring. |
+| `POFF` | Turn pump PWM output off. Rejected while acquiring. |
 | `FON` | Start manual chamber flushing: set flush valve to `Fl`, start on `C1`, then alternate `C1`/`C2` every `FLUSH_INTERVAL_MIN`. Rejected while acquiring or while the valves are moving. Accepted during turbopump and RGA startup. |
 | `FOFF` | Stop manual chamber flushing or startup valve exercise and set flush valve to `Re`. |
 | `VC1` | Manually move the chamber valve to `C1`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, while `FON` flushing is active, or while the valves are moving. Accepted during turbopump and RGA startup, and cancels the startup preflush routine. |
@@ -98,7 +98,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `RUN` | Full start: turbopump, ready dwell, RGA, then acquisition. |
 | `RDY` | Full start to RGA ready, without acquisition. |
 | `SPD####` | Set turbopump target speed in Hz, for example `SPD1200`. |
-| `PMP#` | Set pump PWM duty cycle percent from `0` to `100`, for example `PMP50` or `PMP12.5`. |
+| `PMP#` | Set pump PWM duty cycle percent from `0` to `100`, for example `PMP50` or `PMP12.5`. Rejected while acquiring. |
 | `TIME<unix>` | Set RTC/system time from Unix time. |
 | `CLR` | Clear error state. |
 

@@ -199,6 +199,7 @@ bool handleConfigCommand(char *command);
 bool handleConfigStoreCommand(const char *command);
 bool configChangeAllowed();
 bool valveCommandAllowed(bool manualValveMove, const char **reason);
+bool pumpCommandAllowed();
 void sendConfigAll();
 void sendConfigValue(const char *key);
 void sendResponse(const char *response);
@@ -835,12 +836,20 @@ void handleCommand(char *command) {
   }
 
   if (strcmp(command, "PON") == 0) {
+    if (!pumpCommandAllowed()) {
+      sendErr("PON", "Acquiring");
+      return;
+    }
     turnPumpOn();
     sendOk("PON");
     return;
   }
 
   if (strcmp(command, "POFF") == 0) {
+    if (!pumpCommandAllowed()) {
+      sendErr("POFF", "Acquiring");
+      return;
+    }
     turnPumpOff();
     sendOk("POFF");
     return;
@@ -893,6 +902,10 @@ void handleCommand(char *command) {
   }
 
   if (strncmp(command, "PMP", 3) == 0) {
+    if (!pumpCommandAllowed()) {
+      sendErr("PMP", "Acquiring");
+      return;
+    }
     char *end = nullptr;
     float duty = strtof(command + 3, &end);
     if (end == command + 3 || *end != '\0' || duty < 0.0f || duty > 100.0f) {
@@ -1169,6 +1182,12 @@ bool valveCommandAllowed(bool manualValveMove, const char **reason) {
   }
 
   return true;
+}
+
+// The circulation pump must keep running for the duration of an experiment, so
+// pump changes are rejected while acquiring. PSTAT stays readable.
+bool pumpCommandAllowed() {
+  return systemState != SystemState::Acquiring;
 }
 
 void sendConfigAll() {
