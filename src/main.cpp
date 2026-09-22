@@ -677,14 +677,14 @@ void logScalupDiagnostics() {
   }
   lastDiagMillis = now;
 
-  char diagRow[128];
+  const SCALUPCounters &c = scalup.counters();
+  char diagRow[320];
   snprintf(diagRow, sizeof(diagRow),
-           "S:bytes=%lu,lines=%lu,records=%lu,incomplete=%lu,overflow=%lu",
-           scalup.bytesReceived(),
-           scalup.linesParsed(),
-           scalup.recordsPublished(),
-           scalup.incompleteRecords(),
-           scalup.lineOverflows());
+           "S:bytes=%lu,lines=%lu,rdo=%lu,cond=%lu,press=%lu,ph=%lu,other=%lu,"
+           "records=%lu,incomplete=%lu,overflow=%lu,last=%s",
+           c.bytes, c.lines, c.rdoLines, c.condLines, c.pressureLines,
+           c.phLines, c.otherLines, c.records, c.incomplete, c.overflows,
+           scalup.lastLine());
   Serial.println(diagRow);
 
 #ifdef USE_ETHERNET

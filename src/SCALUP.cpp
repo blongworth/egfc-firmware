@@ -17,7 +17,9 @@ SCALUPDevice::SCALUPDevice(HardwareSerialIMXRT &serial)
 
 void SCALUPDevice::begin(uint32_t baud, uint16_t config)
 {
-  serial.addMemoryForRead(rxBuffer, sizeof(rxBuffer));
+  if (SCALUP_RX_EXTRA_BYTES > 0) {
+    serial.addMemoryForRead(rxBuffer, SCALUP_RX_EXTRA_BYTES);
+  }
   serial.begin(baud, config);
 }
 
@@ -25,7 +27,7 @@ void SCALUPDevice::task()
 {
   while (serial.available()) {
     char c = serial.read();
-    byteCount++;
+    counterState.bytes++;
     if (SCALUP_ECHO_TO_CONSOLE) {
       Serial.write(c);
     }
@@ -37,7 +39,7 @@ void SCALUPDevice::task()
     if (c == '\n') {
       if (!overflowed) {
         lineBuffer[lineLength] = '\0';
-        lineCount++;
+        counterState.lines++;
         parseLine(lineBuffer);
       }
       overflowed = false;
@@ -54,7 +56,7 @@ void SCALUPDevice::task()
     } else {
       // Drop the rest of the line rather than reparsing its tail as a new line.
       overflowed = true;
-      lineOverflowCount++;
+      counterState.overflows++;
     }
   }
 }
@@ -74,29 +76,14 @@ unsigned long SCALUPDevice::latestSequence() const
   return readingSequence;
 }
 
-unsigned long SCALUPDevice::bytesReceived() const
+const SCALUPCounters &SCALUPDevice::counters() const
 {
-  return byteCount;
+  return counterState;
 }
 
-unsigned long SCALUPDevice::linesParsed() const
+const char *SCALUPDevice::lastLine() const
 {
-  return lineCount;
-}
-
-unsigned long SCALUPDevice::recordsPublished() const
-{
-  return readingSequence;
-}
-
-unsigned long SCALUPDevice::incompleteRecords() const
-{
-  return incompleteRecordCount;
-}
-
-unsigned long SCALUPDevice::lineOverflows() const
-{
-  return lineOverflowCount;
+  return lastLineBuffer;
 }
 
 void SCALUPDevice::parseLine(char *line)
@@ -106,9 +93,13 @@ void SCALUPDevice::parseLine(char *line)
     return;
   }
 
+  strncpy(lastLineBuffer, line, sizeof(lastLineBuffer) - 1);
+  lastLineBuffer[sizeof(lastLineBuffer) - 1] = '\0';
+
   if (parseFloatAfter(line, "DO[mg/L]:", &pendingReading.doMgL)) {
     parseFloatAfter(line, "Air_Sat[%]:", &pendingReading.doPctSat);
     parseFloatAfter(line, "Temp[C]:", &pendingReading.tempC);
+    counterState.rdoLines++;
     pendingFields |= SCALUP_FIELD_RDO;
     return;
   }
@@ -117,6 +108,7 @@ void SCALUPDevice::parseLine(char *line)
     parseFloatAfter(line, "SpCond[uS/cm]:", &pendingReading.spCondUS);
     parseFloatAfter(line, "Sal[PSU]:", &pendingReading.salPSU);
     parseFloatAfter(line, "TDS[ppt]:", &pendingReading.tdsPpt);
+    counterState.condLines++;
     pendingFields |= SCALUP_FIELD_COND;
     return;
   }
@@ -126,6 +118,7 @@ void SCALUPDevice::parseLine(char *line)
     parseFloatAfter(line, "Press[mbar]:", &pendingReading.pressureMbar);
     parseFloatAfter(line, "Depth[m]:", &pendingReading.depthM);
     parseFloatAfter(line, "Quality:", &pendingReading.quality);
+    counterState.pressureLines++;
     pendingFields |= SCALUP_FIELD_PRESSURE;
     return;
   }
@@ -133,12 +126,14 @@ void SCALUPDevice::parseLine(char *line)
   if (parseFloatAfter(line, "pH:", &pendingReading.ph)) {
     parseFloatAfter(line, "pH_SI[mV]:", &pendingReading.phSiMv);
     parseFloatAfter(line, "pH_Err:", &pendingReading.phError);
+    counterState.phLines++;
     pendingFields |= SCALUP_FIELD_PH;
     publishPending();
     return;
   }
 
   if (!isDataLine(line)) {
+    counterState.otherLines++;
     // Record delimiter: start a fresh record so no value carries over.
     pendingReading = SCALUPReading{};
     strncpy(pendingReading.timestamp, line, sizeof(pendingReading.timestamp) - 1);
@@ -151,7 +146,7 @@ void SCALUPDevice::publishPending()
 {
   // Publish whatever arrived; missing groups are reported via fieldMask.
   if ((pendingFields & SCALUP_ALL_FIELDS) != SCALUP_ALL_FIELDS) {
-    incompleteRecordCount++;
+    counterState.incomplete++;
   }
 
   pendingReading.valid = true;
@@ -161,6 +156,7 @@ void SCALUPDevice::publishPending()
                             sizeof(pendingReading.rtcTimestamp));
   latestReading = pendingReading;
   readingSequence++;
+  counterState.records++;
   pendingFields = 0;
 }
 

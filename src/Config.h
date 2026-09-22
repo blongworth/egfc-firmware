@@ -85,6 +85,10 @@ const bool SCALUP_ECHO_TO_CONSOLE = false;
 // Ignore the latest reading for control decisions once it is this old
 // (~7 missed records at the sonde's ~17 s cadence).
 const unsigned long SCALUP_STALE_MS = 120000;
+// Extra RX buffer beyond the Teensy's 64-byte default. Set to 0 to fall back
+// to the stock buffer, which isolates the buffer change from the parser
+// changes when bisecting.
+const size_t SCALUP_RX_EXTRA_BYTES = 2048;
 // Periodic "S:" counter line so a silent sonde can be told apart from a
 // parser that is discarding lines. Set to 0 to disable.
 const unsigned long SCALUP_DIAG_INTERVAL_MS = 30000;

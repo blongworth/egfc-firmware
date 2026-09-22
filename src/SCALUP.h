@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+#include "Config.h"
+
 // Field groups, one bit per sonde output line within a record.
 constexpr uint8_t SCALUP_FIELD_RDO = 1 << 0;
 constexpr uint8_t SCALUP_FIELD_COND = 1 << 1;
@@ -37,6 +39,20 @@ struct SCALUPReading {
   float phError = 0.0f;
 };
 
+// Diagnostic counters: which labels the parser is actually matching.
+struct SCALUPCounters {
+  unsigned long bytes = 0;
+  unsigned long lines = 0;
+  unsigned long rdoLines = 0;
+  unsigned long condLines = 0;
+  unsigned long pressureLines = 0;
+  unsigned long phLines = 0;
+  unsigned long otherLines = 0;
+  unsigned long records = 0;
+  unsigned long incomplete = 0;
+  unsigned long overflows = 0;
+};
+
 class SCALUPDevice {
 public:
   // HardwareSerialIMXRT (not HardwareSerial) because addMemoryForRead(),
@@ -50,18 +66,17 @@ public:
   bool hasReading() const;
   unsigned long latestSequence() const;
 
-  unsigned long bytesReceived() const;
-  unsigned long linesParsed() const;
-  unsigned long recordsPublished() const;
-  unsigned long incompleteRecords() const;
-  unsigned long lineOverflows() const;
+  const SCALUPCounters &counters() const;
+  // Most recent non-empty line, so the sonde's real format can be seen
+  // without enabling a full byte echo.
+  const char *lastLine() const;
 
 private:
   static const size_t LINE_BUFFER_SIZE = 180;
 
   HardwareSerialIMXRT &serial;
   // ~700 ms of slack at 28800 baud, so records survive blocking turbo/RGA calls.
-  uint8_t rxBuffer[2048];
+  uint8_t rxBuffer[SCALUP_RX_EXTRA_BYTES > 0 ? SCALUP_RX_EXTRA_BYTES : 1];
   char lineBuffer[LINE_BUFFER_SIZE];
   size_t lineLength = 0;
   bool overflowed = false;
@@ -69,10 +84,8 @@ private:
   SCALUPReading pendingReading;
   uint8_t pendingFields = 0;
   unsigned long readingSequence = 0;
-  unsigned long byteCount = 0;
-  unsigned long lineCount = 0;
-  unsigned long incompleteRecordCount = 0;
-  unsigned long lineOverflowCount = 0;
+  SCALUPCounters counterState;
+  char lastLineBuffer[LINE_BUFFER_SIZE] = "";
 
   void parseLine(char *line);
   void publishPending();
