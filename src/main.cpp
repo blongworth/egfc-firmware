@@ -651,6 +651,16 @@ void logValveChange(const char *event) {
 #endif
 }
 
+// Format one SCALUP field, or "NA" when its group line was not received.
+void formatScalupField(char *out, size_t size, float value, uint8_t fieldMask,
+                       uint8_t fieldBit) {
+  if (fieldMask & fieldBit) {
+    snprintf(out, size, "%.3f", value);
+  } else {
+    snprintf(out, size, "NA");
+  }
+}
+
 void logScalupReadingIfNew() {
   if (!scalup.hasReading()) {
     return;
@@ -663,16 +673,33 @@ void logScalupReadingIfNew() {
   lastLoggedScalupSequence = sequence;
 
   const SCALUPReading &reading = scalup.latest();
-  char scalupRow[160];
+  char tempStr[12];
+  char salStr[12];
+  char pressStr[12];
+  char doStr[12];
+  char phStr[12];
+  formatScalupField(tempStr, sizeof(tempStr), reading.tempC, reading.fieldMask,
+                    SCALUP_FIELD_RDO);
+  formatScalupField(salStr, sizeof(salStr), reading.salPSU, reading.fieldMask,
+                    SCALUP_FIELD_COND);
+  formatScalupField(pressStr, sizeof(pressStr), reading.pressureMbar,
+                    reading.fieldMask, SCALUP_FIELD_PRESSURE);
+  formatScalupField(doStr, sizeof(doStr), reading.doMgL, reading.fieldMask,
+                    SCALUP_FIELD_RDO);
+  formatScalupField(phStr, sizeof(phStr), reading.ph, reading.fieldMask,
+                    SCALUP_FIELD_PH);
+
+  char scalupRow[192];
   snprintf(scalupRow, sizeof(scalupRow),
-           "P:%s,%s,%.3f,%.3f,%.3f,%.3f,%.3f",
+           "P:%s,%s,%s,%s,%s,%s,%s,%u",
            reading.rtcTimestamp,
            reading.timestamp,
-           reading.tempC,
-           reading.salPSU,
-           reading.pressureMbar,
-           reading.doMgL,
-           reading.ph);
+           tempStr,
+           salStr,
+           pressStr,
+           doStr,
+           phStr,
+           reading.fieldMask);
   Serial.println(scalupRow);
 
   if (dataFile) {
@@ -696,7 +723,16 @@ bool oxygenOutsideRange() {
     return false;
   }
 
-  float oxygenMgL = scalup.latest().doMgL;
+  const SCALUPReading &reading = scalup.latest();
+  // Never act on a value the sonde stopped updating, or on a missing DO group.
+  if ((reading.fieldMask & SCALUP_FIELD_RDO) == 0) {
+    return false;
+  }
+  if (millis() - reading.receivedMillis > SCALUP_STALE_MS) {
+    return false;
+  }
+
+  float oxygenMgL = reading.doMgL;
   return oxygenMgL < runtimeConfig.oxygenMinMgL || oxygenMgL > runtimeConfig.oxygenMaxMgL;
 }
 

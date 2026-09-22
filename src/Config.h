@@ -82,6 +82,9 @@ const float OXYGEN_MAX_MG_L = 12.0f;
 // SCALUP sonde serial parser.
 const uint32_t SCALUP_BAUD = 28800;
 const bool SCALUP_ECHO_TO_CONSOLE = false;
+// Ignore the latest reading for control decisions once it is this old
+// (~7 missed records at the sonde's ~17 s cadence).
+const unsigned long SCALUP_STALE_MS = 120000;
 
 // Pump PWM output and tach readback.
 const uint8_t PUMP_PWM_PIN = 7;

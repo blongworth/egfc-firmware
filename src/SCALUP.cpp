@@ -4,28 +4,20 @@
 
 #include "Config.h"
 
-const uint8_t SCALUP_FIELD_RDO = 1 << 0;
-const uint8_t SCALUP_FIELD_COND = 1 << 1;
-const uint8_t SCALUP_FIELD_PRESSURE = 1 << 2;
-const uint8_t SCALUP_FIELD_PH = 1 << 3;
-const uint8_t SCALUP_ALL_FIELDS = SCALUP_FIELD_RDO |
-                                  SCALUP_FIELD_COND |
-                                  SCALUP_FIELD_PRESSURE |
-                                  SCALUP_FIELD_PH;
-
 static void formatCurrentRtcTimestamp(char *buffer, size_t bufferSize)
 {
   snprintf(buffer, bufferSize, "%04d-%02d-%02dT%02d:%02d:%02dZ",
            year(), month(), day(), hour(), minute(), second());
 }
 
-SCALUPDevice::SCALUPDevice(HardwareSerial &serial)
+SCALUPDevice::SCALUPDevice(HardwareSerialIMXRT &serial)
   : serial(serial)
 {
 }
 
 void SCALUPDevice::begin(uint32_t baud, uint16_t config)
 {
+  serial.addMemoryForRead(rxBuffer, sizeof(rxBuffer));
   serial.begin(baud, config);
 }
 
@@ -42,16 +34,25 @@ void SCALUPDevice::task()
     }
 
     if (c == '\n') {
-      lineBuffer[lineLength] = '\0';
-      parseLine(lineBuffer);
+      if (!overflowed) {
+        lineBuffer[lineLength] = '\0';
+        parseLine(lineBuffer);
+      }
+      overflowed = false;
       lineLength = 0;
+      continue;
+    }
+
+    if (overflowed) {
       continue;
     }
 
     if (lineLength < LINE_BUFFER_SIZE - 1) {
       lineBuffer[lineLength++] = c;
     } else {
-      lineLength = 0;
+      // Drop the rest of the line rather than reparsing its tail as a new line.
+      overflowed = true;
+      lineOverflowCount++;
     }
   }
 }
@@ -69,6 +70,21 @@ bool SCALUPDevice::hasReading() const
 unsigned long SCALUPDevice::latestSequence() const
 {
   return readingSequence;
+}
+
+unsigned long SCALUPDevice::recordsPublished() const
+{
+  return readingSequence;
+}
+
+unsigned long SCALUPDevice::incompleteRecords() const
+{
+  return incompleteRecordCount;
+}
+
+unsigned long SCALUPDevice::lineOverflows() const
+{
+  return lineOverflowCount;
 }
 
 void SCALUPDevice::parseLine(char *line)
@@ -111,6 +127,8 @@ void SCALUPDevice::parseLine(char *line)
   }
 
   if (!isDataLine(line)) {
+    // Record delimiter: start a fresh record so no value carries over.
+    pendingReading = SCALUPReading{};
     strncpy(pendingReading.timestamp, line, sizeof(pendingReading.timestamp) - 1);
     pendingReading.timestamp[sizeof(pendingReading.timestamp) - 1] = '\0';
     pendingFields = 0;
@@ -119,11 +137,13 @@ void SCALUPDevice::parseLine(char *line)
 
 void SCALUPDevice::publishPending()
 {
+  // Publish whatever arrived; missing groups are reported via fieldMask.
   if ((pendingFields & SCALUP_ALL_FIELDS) != SCALUP_ALL_FIELDS) {
-    return;
+    incompleteRecordCount++;
   }
 
   pendingReading.valid = true;
+  pendingReading.fieldMask = pendingFields;
   pendingReading.receivedMillis = millis();
   formatCurrentRtcTimestamp(pendingReading.rtcTimestamp,
                             sizeof(pendingReading.rtcTimestamp));
