@@ -6,7 +6,7 @@
 #include "PwmRpm.h"
 
 // Firmware version, reported at boot and in each data file header.
-#define FIRMWARE_VERSION "0.1.1"
+#define FIRMWARE_VERSION "0.2.0"
 
 // Board pins and local console.
 const uint8_t LED_PIN = 13;
