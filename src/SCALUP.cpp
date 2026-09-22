@@ -25,6 +25,7 @@ void SCALUPDevice::task()
 {
   while (serial.available()) {
     char c = serial.read();
+    byteCount++;
     if (SCALUP_ECHO_TO_CONSOLE) {
       Serial.write(c);
     }
@@ -36,6 +37,7 @@ void SCALUPDevice::task()
     if (c == '\n') {
       if (!overflowed) {
         lineBuffer[lineLength] = '\0';
+        lineCount++;
         parseLine(lineBuffer);
       }
       overflowed = false;
@@ -70,6 +72,16 @@ bool SCALUPDevice::hasReading() const
 unsigned long SCALUPDevice::latestSequence() const
 {
   return readingSequence;
+}
+
+unsigned long SCALUPDevice::bytesReceived() const
+{
+  return byteCount;
+}
+
+unsigned long SCALUPDevice::linesParsed() const
+{
+  return lineCount;
 }
 
 unsigned long SCALUPDevice::recordsPublished() const

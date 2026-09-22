@@ -85,6 +85,9 @@ const bool SCALUP_ECHO_TO_CONSOLE = false;
 // Ignore the latest reading for control decisions once it is this old
 // (~7 missed records at the sonde's ~17 s cadence).
 const unsigned long SCALUP_STALE_MS = 120000;
+// Periodic "S:" counter line so a silent sonde can be told apart from a
+// parser that is discarding lines. Set to 0 to disable.
+const unsigned long SCALUP_DIAG_INTERVAL_MS = 30000;
 
 // Pump PWM output and tach readback.
 const uint8_t PUMP_PWM_PIN = 7;

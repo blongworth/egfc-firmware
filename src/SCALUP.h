@@ -50,6 +50,8 @@ public:
   bool hasReading() const;
   unsigned long latestSequence() const;
 
+  unsigned long bytesReceived() const;
+  unsigned long linesParsed() const;
   unsigned long recordsPublished() const;
   unsigned long incompleteRecords() const;
   unsigned long lineOverflows() const;
@@ -67,6 +69,8 @@ private:
   SCALUPReading pendingReading;
   uint8_t pendingFields = 0;
   unsigned long readingSequence = 0;
+  unsigned long byteCount = 0;
+  unsigned long lineCount = 0;
   unsigned long incompleteRecordCount = 0;
   unsigned long lineOverflowCount = 0;
 

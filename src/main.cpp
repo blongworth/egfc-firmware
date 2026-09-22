@@ -229,6 +229,7 @@ void startValveExperiment();
 void startValveFlush();
 void logValveChange(const char *event);
 void logScalupReadingIfNew();
+void logScalupDiagnostics();
 void turnPumpOn();
 void turnPumpOff();
 bool oxygenOutsideRange();
@@ -419,6 +420,7 @@ void loop() {
 
   scalup.task();
   logScalupReadingIfNew();
+  logScalupDiagnostics();
 
   turbo.task();
 
@@ -659,6 +661,38 @@ void formatScalupField(char *out, size_t size, float value, uint8_t fieldMask,
   } else {
     snprintf(out, size, "NA");
   }
+}
+
+// Periodic counters: distinguishes "no bytes arriving" from "bytes arriving
+// but lines discarded" without needing SCALUP_ECHO_TO_CONSOLE.
+void logScalupDiagnostics() {
+  if (SCALUP_DIAG_INTERVAL_MS == 0) {
+    return;
+  }
+
+  static unsigned long lastDiagMillis = 0;
+  unsigned long now = millis();
+  if (now - lastDiagMillis < SCALUP_DIAG_INTERVAL_MS) {
+    return;
+  }
+  lastDiagMillis = now;
+
+  char diagRow[128];
+  snprintf(diagRow, sizeof(diagRow),
+           "S:bytes=%lu,lines=%lu,records=%lu,incomplete=%lu,overflow=%lu",
+           scalup.bytesReceived(),
+           scalup.linesParsed(),
+           scalup.recordsPublished(),
+           scalup.incompleteRecords(),
+           scalup.lineOverflows());
+  Serial.println(diagRow);
+
+#ifdef USE_ETHERNET
+  Udp.beginPacket(destinationIP, destinationPort);
+  Udp.println(diagRow);
+  Udp.write(13);
+  Udp.endPacket();
+#endif
 }
 
 void logScalupReadingIfNew() {
