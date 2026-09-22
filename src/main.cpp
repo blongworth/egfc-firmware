@@ -663,10 +663,11 @@ void formatScalupField(char *out, size_t size, float value, uint8_t fieldMask,
   }
 }
 
-// Periodic counters: distinguishes "no bytes arriving" from "bytes arriving
-// but lines discarded" without needing SCALUP_ECHO_TO_CONSOLE.
+// Periodic health counters on the console. Off unless SCALUP_REPORT_DIAGNOSTICS
+// is set; deliberately not sent over UDP so the surface data stream carries
+// only P:/V:/R: rows.
 void logScalupDiagnostics() {
-  if (SCALUP_DIAG_INTERVAL_MS == 0) {
+  if (!SCALUP_REPORT_DIAGNOSTICS || SCALUP_DIAG_INTERVAL_MS == 0) {
     return;
   }
 
@@ -678,21 +679,11 @@ void logScalupDiagnostics() {
   lastDiagMillis = now;
 
   const SCALUPCounters &c = scalup.counters();
-  char diagRow[320];
+  char diagRow[128];
   snprintf(diagRow, sizeof(diagRow),
-           "S:bytes=%lu,lines=%lu,rdo=%lu,cond=%lu,press=%lu,ph=%lu,other=%lu,"
-           "records=%lu,incomplete=%lu,overflow=%lu,last=%s",
-           c.bytes, c.lines, c.rdoLines, c.condLines, c.pressureLines,
-           c.phLines, c.otherLines, c.records, c.incomplete, c.overflows,
-           scalup.lastLine());
+           "S:bytes=%lu,lines=%lu,records=%lu,incomplete=%lu,overflow=%lu",
+           c.bytes, c.lines, c.records, c.incomplete, c.overflows);
   Serial.println(diagRow);
-
-#ifdef USE_ETHERNET
-  Udp.beginPacket(destinationIP, destinationPort);
-  Udp.println(diagRow);
-  Udp.write(13);
-  Udp.endPacket();
-#endif
 }
 
 void logScalupReadingIfNew() {

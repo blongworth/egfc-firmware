@@ -81,11 +81,6 @@ const SCALUPCounters &SCALUPDevice::counters() const
   return counterState;
 }
 
-const char *SCALUPDevice::lastLine() const
-{
-  return lastLineBuffer;
-}
-
 void SCALUPDevice::parseLine(char *line)
 {
   trimLine(line);
@@ -93,13 +88,9 @@ void SCALUPDevice::parseLine(char *line)
     return;
   }
 
-  strncpy(lastLineBuffer, line, sizeof(lastLineBuffer) - 1);
-  lastLineBuffer[sizeof(lastLineBuffer) - 1] = '\0';
-
   if (parseFloatAfter(line, "DO[mg/L]:", &pendingReading.doMgL)) {
     parseFloatAfter(line, "Air_Sat[%]:", &pendingReading.doPctSat);
     parseFloatAfter(line, "Temp[C]:", &pendingReading.tempC);
-    counterState.rdoLines++;
     pendingFields |= SCALUP_FIELD_RDO;
     return;
   }
@@ -108,7 +99,6 @@ void SCALUPDevice::parseLine(char *line)
     parseFloatAfter(line, "SpCond[uS/cm]:", &pendingReading.spCondUS);
     parseFloatAfter(line, "Sal[PSU]:", &pendingReading.salPSU);
     parseFloatAfter(line, "TDS[ppt]:", &pendingReading.tdsPpt);
-    counterState.condLines++;
     pendingFields |= SCALUP_FIELD_COND;
     return;
   }
@@ -118,7 +108,6 @@ void SCALUPDevice::parseLine(char *line)
     parseFloatAfter(line, "Press[mbar]:", &pendingReading.pressureMbar);
     parseFloatAfter(line, "Depth[m]:", &pendingReading.depthM);
     parseFloatAfter(line, "Quality:", &pendingReading.quality);
-    counterState.pressureLines++;
     pendingFields |= SCALUP_FIELD_PRESSURE;
     return;
   }
@@ -126,14 +115,12 @@ void SCALUPDevice::parseLine(char *line)
   if (parseFloatAfter(line, "pH:", &pendingReading.ph)) {
     parseFloatAfter(line, "pH_SI[mV]:", &pendingReading.phSiMv);
     parseFloatAfter(line, "pH_Err:", &pendingReading.phError);
-    counterState.phLines++;
     pendingFields |= SCALUP_FIELD_PH;
     publishPending();
     return;
   }
 
   if (!isDataLine(line)) {
-    counterState.otherLines++;
     // Record delimiter: start a fresh record so no value carries over.
     pendingReading = SCALUPReading{};
     strncpy(pendingReading.timestamp, line, sizeof(pendingReading.timestamp) - 1);

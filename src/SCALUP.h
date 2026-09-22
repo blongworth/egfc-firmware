@@ -39,15 +39,11 @@ struct SCALUPReading {
   float phError = 0.0f;
 };
 
-// Diagnostic counters: which labels the parser is actually matching.
+// Health counters. Reported after deployment to show whether the enlarged RX
+// buffer was sufficient, and to tell a silent sonde apart from a stalled parser.
 struct SCALUPCounters {
   unsigned long bytes = 0;
   unsigned long lines = 0;
-  unsigned long rdoLines = 0;
-  unsigned long condLines = 0;
-  unsigned long pressureLines = 0;
-  unsigned long phLines = 0;
-  unsigned long otherLines = 0;
   unsigned long records = 0;
   unsigned long incomplete = 0;
   unsigned long overflows = 0;
@@ -67,9 +63,6 @@ public:
   unsigned long latestSequence() const;
 
   const SCALUPCounters &counters() const;
-  // Most recent non-empty line, so the sonde's real format can be seen
-  // without enabling a full byte echo.
-  const char *lastLine() const;
 
 private:
   static const size_t LINE_BUFFER_SIZE = 180;
@@ -85,7 +78,6 @@ private:
   uint8_t pendingFields = 0;
   unsigned long readingSequence = 0;
   SCALUPCounters counterState;
-  char lastLineBuffer[LINE_BUFFER_SIZE] = "";
 
   void parseLine(char *line);
   void publishPending();
