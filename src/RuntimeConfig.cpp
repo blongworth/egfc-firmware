@@ -20,6 +20,8 @@ void RuntimeConfig::resetToDefaults()
   rgaReadyBeforeAcquisitionMin = RGA_READY_BEFORE_ACQUISITION_MIN;
   turboReadyBeforeRgaMin = TURBO_READY_BEFORE_RGA_MIN;
   chamberValveToggleIntervalMin = CHAMBER_VALVE_TOGGLE_INTERVAL_MIN;
+  flushIntervalMin = FLUSH_INTERVAL_MIN;
+  flushChamberToggleIntervalMin = FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN;
   minExperimentIntervalMin = MIN_EXPERIMENT_INTERVAL_MIN;
   maxExperimentIntervalMin = MAX_EXPERIMENT_INTERVAL_MIN;
   oxygenMinMgL = OXYGEN_MIN_MG_L;
@@ -39,6 +41,8 @@ RuntimeConfig::Data RuntimeConfig::data() const
   out.rgaReadyBeforeAcquisitionMin = rgaReadyBeforeAcquisitionMin;
   out.turboReadyBeforeRgaMin = turboReadyBeforeRgaMin;
   out.chamberValveToggleIntervalMin = chamberValveToggleIntervalMin;
+  out.flushIntervalMin = flushIntervalMin;
+  out.flushChamberToggleIntervalMin = flushChamberToggleIntervalMin;
   out.minExperimentIntervalMin = minExperimentIntervalMin;
   out.maxExperimentIntervalMin = maxExperimentIntervalMin;
   out.oxygenMinMgL = oxygenMinMgL;
@@ -62,6 +66,8 @@ bool RuntimeConfig::applyData(const Data &data)
   rgaReadyBeforeAcquisitionMin = data.rgaReadyBeforeAcquisitionMin;
   turboReadyBeforeRgaMin = data.turboReadyBeforeRgaMin;
   chamberValveToggleIntervalMin = data.chamberValveToggleIntervalMin;
+  flushIntervalMin = data.flushIntervalMin;
+  flushChamberToggleIntervalMin = data.flushChamberToggleIntervalMin;
   minExperimentIntervalMin = data.minExperimentIntervalMin;
   maxExperimentIntervalMin = data.maxExperimentIntervalMin;
   oxygenMinMgL = data.oxygenMinMgL;
@@ -84,6 +90,8 @@ bool RuntimeConfig::isCommandSettableKey(const char *key) const
          strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MIN") == 0 ||
          strcmp(key, "TURBO_READY_BEFORE_RGA_MIN") == 0 ||
          strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MIN") == 0 ||
+         strcmp(key, "FLUSH_INTERVAL_MIN") == 0 ||
+         strcmp(key, "FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN") == 0 ||
          strcmp(key, "MIN_EXPERIMENT_INTERVAL_MIN") == 0 ||
          strcmp(key, "MAX_EXPERIMENT_INTERVAL_MIN") == 0 ||
          strcmp(key, "OXYGEN_MIN_MG_L") == 0 ||
@@ -161,6 +169,24 @@ bool RuntimeConfig::setValue(const char *key, const char *value, const char **er
     return true;
   }
 
+  if (strcmp(key, "FLUSH_INTERVAL_MIN") == 0) {
+    if (!parseUnsignedLongValue(value, &unsignedValue)) {
+      *errorMessage = "invalid value";
+      return false;
+    }
+    flushIntervalMin = unsignedValue;
+    return true;
+  }
+
+  if (strcmp(key, "FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN") == 0) {
+    if (!parseUnsignedLongValue(value, &unsignedValue)) {
+      *errorMessage = "invalid value";
+      return false;
+    }
+    flushChamberToggleIntervalMin = unsignedValue;
+    return true;
+  }
+
   if (strcmp(key, "MIN_EXPERIMENT_INTERVAL_MIN") == 0) {
     if (!parseUnsignedLongValue(value, &unsignedValue)) {
       *errorMessage = "invalid value";
@@ -222,6 +248,10 @@ bool RuntimeConfig::formatValue(const char *key, char *buffer, size_t bufferSize
     snprintf(buffer, bufferSize, "CFG,TURBO_READY_BEFORE_RGA_MIN=%lu", turboReadyBeforeRgaMin);
   } else if (strcmp(key, "CHAMBER_VALVE_TOGGLE_INTERVAL_MIN") == 0) {
     snprintf(buffer, bufferSize, "CFG,CHAMBER_VALVE_TOGGLE_INTERVAL_MIN=%lu", chamberValveToggleIntervalMin);
+  } else if (strcmp(key, "FLUSH_INTERVAL_MIN") == 0) {
+    snprintf(buffer, bufferSize, "CFG,FLUSH_INTERVAL_MIN=%lu", flushIntervalMin);
+  } else if (strcmp(key, "FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN") == 0) {
+    snprintf(buffer, bufferSize, "CFG,FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN=%lu", flushChamberToggleIntervalMin);
   } else if (strcmp(key, "MIN_EXPERIMENT_INTERVAL_MIN") == 0) {
     snprintf(buffer, bufferSize, "CFG,MIN_EXPERIMENT_INTERVAL_MIN=%lu", minExperimentIntervalMin);
   } else if (strcmp(key, "MAX_EXPERIMENT_INTERVAL_MIN") == 0) {

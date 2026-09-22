@@ -17,6 +17,8 @@ public:
     unsigned long rgaReadyBeforeAcquisitionMin;
     unsigned long turboReadyBeforeRgaMin;
     unsigned long chamberValveToggleIntervalMin;
+    unsigned long flushIntervalMin;
+    unsigned long flushChamberToggleIntervalMin;
     unsigned long minExperimentIntervalMin;
     unsigned long maxExperimentIntervalMin;
     float oxygenMinMgL;
@@ -41,6 +43,8 @@ public:
   unsigned long rgaReadyBeforeAcquisitionMin = RGA_READY_BEFORE_ACQUISITION_MIN;
   unsigned long turboReadyBeforeRgaMin = TURBO_READY_BEFORE_RGA_MIN;
   unsigned long chamberValveToggleIntervalMin = CHAMBER_VALVE_TOGGLE_INTERVAL_MIN;
+  unsigned long flushIntervalMin = FLUSH_INTERVAL_MIN;
+  unsigned long flushChamberToggleIntervalMin = FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN;
   unsigned long minExperimentIntervalMin = MIN_EXPERIMENT_INTERVAL_MIN;
   unsigned long maxExperimentIntervalMin = MAX_EXPERIMENT_INTERVAL_MIN;
   float oxygenMinMgL = OXYGEN_MIN_MG_L;

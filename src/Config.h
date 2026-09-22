@@ -72,8 +72,10 @@ const unsigned long PREFLUSH_VALVE_INTERVAL_MS = 30000;
 const unsigned long MIN_EXPERIMENT_INTERVAL_MIN = 180;
 // longest experiment before a flush is forced
 const unsigned long MAX_EXPERIMENT_INTERVAL_MIN = 180;
-// time to flush each chamber between experiments
-const unsigned long FLUSH_INTERVAL_MIN = 30;
+// total time spent flushing between experiments
+const unsigned long FLUSH_INTERVAL_MIN = 60;
+// how often to switch chambers while flushing
+const unsigned long FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN = 30;
 
 // Oxygen limits from the latest SCALUP reading.
 const float OXYGEN_MIN_MG_L = 2.0f;

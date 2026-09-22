@@ -40,7 +40,7 @@ Firmware for the eelgrass flux chamber lander controller. The firmware controls 
 - Ethernet is enabled in the default PlatformIO build. The `teensy41_ethernet` environment uses UDP while keeping USB serial commands enabled.
 - Valve pins are chamber A `2`, chamber B `3`, shared `SLP` `4`, flush A `5`, and flush B `6`.
 - Startup valve preflush is disabled by default with `PREFLUSH_ON_STARTUP = false`.
-- Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `15 minutes`, minimum experiment interval before oxygen checks `180 minutes`, maximum experiment interval `180 minutes`, flush interval `30 minutes` per chamber.
+- Valve timing: move time `10000 ms`, preflush interval `20000 ms`, chamber toggle interval `15 minutes`, minimum experiment interval before oxygen checks `180 minutes`, maximum experiment interval `180 minutes`, total flush time `60 minutes`, flush chamber toggle interval `30 minutes`.
 - Oxygen flush limits use the latest SCALUP dissolved oxygen reading: minimum `2.0 mg/L`, maximum `12.0 mg/L`.
 - SCALUP raw serial echo may be enabled for debugging.
 
@@ -82,7 +82,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `VSTAT` | Query current valve positions, valve motion state, and pump PWM/RPM status. |
 | `PON` | Turn pump PWM output on at the configured/current duty setting. Rejected while acquiring. |
 | `POFF` | Turn pump PWM output off. Rejected while acquiring. |
-| `FON` | Start manual chamber flushing: set flush valve to `Fl`, start on `C1`, then alternate `C1`/`C2` every `FLUSH_INTERVAL_MIN`. Rejected while acquiring or while the valves are moving. Accepted during turbopump and RGA startup. |
+| `FON` | Start manual chamber flushing: set flush valve to `Fl`, start on `C1`, then alternate `C1`/`C2` every `FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN` (`0` disables switching). Rejected while acquiring or while the valves are moving. Accepted during turbopump and RGA startup. |
 | `FOFF` | Stop manual chamber flushing or startup valve exercise and set flush valve to `Re`. |
 | `VC1` | Manually move the chamber valve to `C1`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, while `FON` flushing is active, or while the valves are moving. Accepted during turbopump and RGA startup, and cancels the startup preflush routine. |
 | `VC2` | Manually move the chamber valve to `C2`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, while `FON` flushing is active, or while the valves are moving. Accepted during turbopump and RGA startup, and cancels the startup preflush routine. |
@@ -143,13 +143,15 @@ RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS
 RGA_READY_BEFORE_ACQUISITION_MIN
 TURBO_READY_BEFORE_RGA_MIN
 CHAMBER_VALVE_TOGGLE_INTERVAL_MIN
+FLUSH_INTERVAL_MIN
+FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN
 MIN_EXPERIMENT_INTERVAL_MIN
 MAX_EXPERIMENT_INTERVAL_MIN
 OXYGEN_MIN_MG_L
 OXYGEN_MAX_MG_L
 ```
 
-The chamber toggle and experiment interval settings are specified in minutes.
+The chamber toggle, flush, and experiment interval settings are specified in minutes.
 
 `PUMP_ON_AT_STARTUP` can be queried with `CFG,PUMP_ON_AT_STARTUP?`, but is read-only over serial because pump startup still uses the compiled boot setting.
 
@@ -209,7 +211,7 @@ Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes tur
 5. Start the full measurement sequence with `RUN` (`!Z11` is still accepted), or set `AUTOSTART_ON_BOOT = true` to start automatically after boot setup.
 6. The firmware sets turbopump speed, starts the turbopump, checks for readiness, waits `TURBO_READY_BEFORE_RGA_MIN`, turns on the RGA filament, waits `RGA_READY_BEFORE_ACQUISITION_MIN`, then begins mass scans. These dwells apply to `RUN`, including boot autostart.
 7. If `PREFLUSH_ON_STARTUP` and `PUMP_ON_AT_STARTUP` are both true, preflush alternates staggered chamber and flush valve changes before acquisition starts. Preflush is off by default, and a manual valve command (`VC1`, `VC2`, `VFL`, `VRE`) or `FON` cancels it.
-8. During acquisition, the valve experiment starts with flush recirculating and chamber A selected, toggles the chamber valve on the configured interval, then flushes chamber A and chamber B before starting the next experiment.
+8. During acquisition, the valve experiment starts with flush recirculating and chamber A selected, toggles the chamber valve on the configured interval, then flushes for `FLUSH_INTERVAL_MIN`, alternating chambers every `FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN`, before starting the next experiment.
 9. RGA, SCALUP, valve, and pump rows are printed, written to SD, and sent over UDP if Ethernet is enabled.
 10. Stop with `OFF` (`!Z20`, `!Z21`, and `!Z22` are still accepted). This stops acquisition, verifies the RGA filament is off, waits `RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS`, then stops the turbopump.
 

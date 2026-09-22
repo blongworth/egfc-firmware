@@ -45,14 +45,14 @@ RuntimeConfig runtimeConfig;
 enum class ValveExperimentState {
   Idle,
   Running,
-  FlushingA,
-  FlushingB
+  Flushing
 };
 
 ValveExperimentState valveExperimentState = ValveExperimentState::Idle;
 elapsedMillis valveExperimentTimer;
 elapsedMillis chamberValveTimer;
 elapsedMillis flushTimer;
+elapsedMillis flushChamberTimer;
 elapsedMillis valvePreflushTimer;
 bool valvePreflushEnabled = true;
 bool valvePreflushActive = false;
@@ -493,10 +493,8 @@ void updateValveExperiment() {
     return;
   }
 
-  if (valveWasMoving &&
-      (valveExperimentState == ValveExperimentState::FlushingA ||
-       valveExperimentState == ValveExperimentState::FlushingB)) {
-    flushTimer = 0;
+  if (valveWasMoving && valveExperimentState == ValveExperimentState::Flushing) {
+    flushChamberTimer = 0;
   }
 
   switch (valveExperimentState) {
@@ -519,18 +517,16 @@ void updateValveExperiment() {
       }
       return;
 
-    case ValveExperimentState::FlushingA:
-      if (flushTimer >= FLUSH_INTERVAL_MIN * MILLISECONDS_PER_MINUTE) {
-        valves.moveChamberToB();
-        logValveChange("FLUSH_CHAMBER_B");
-        flushTimer = 0;
-        valveExperimentState = ValveExperimentState::FlushingB;
-      }
-      return;
-
-    case ValveExperimentState::FlushingB:
-      if (flushTimer >= FLUSH_INTERVAL_MIN * MILLISECONDS_PER_MINUTE) {
+    case ValveExperimentState::Flushing:
+      if (flushTimer >= runtimeConfig.flushIntervalMin * MILLISECONDS_PER_MINUTE) {
         startValveExperiment();
+        return;
+      }
+      if (runtimeConfig.flushChamberToggleIntervalMin > 0 &&
+          flushChamberTimer >= runtimeConfig.flushChamberToggleIntervalMin * MILLISECONDS_PER_MINUTE) {
+        flushChamberTimer = 0;
+        valves.toggleChamber();
+        logValveChange("FLUSH_CHAMBER_TOGGLE");
       }
       return;
   }
@@ -552,7 +548,8 @@ void startValveFlush() {
   valves.moveChamberToA();
   logValveChange("FLUSH_CHAMBER_A");
   flushTimer = 0;
-  valveExperimentState = ValveExperimentState::FlushingA;
+  flushChamberTimer = 0;
+  valveExperimentState = ValveExperimentState::Flushing;
 }
 
 void updateValvePreflush() {
@@ -597,7 +594,8 @@ void updateManualFlush(bool valveWasMoving) {
     return;
   }
 
-  if (manualFlushTimer < FLUSH_INTERVAL_MIN * MILLISECONDS_PER_MINUTE) {
+  if (runtimeConfig.flushChamberToggleIntervalMin == 0 ||
+      manualFlushTimer < runtimeConfig.flushChamberToggleIntervalMin * MILLISECONDS_PER_MINUTE) {
     return;
   }
 
@@ -1260,6 +1258,8 @@ void sendConfigAll() {
   sendConfigValue("RGA_READY_BEFORE_ACQUISITION_MIN");
   sendConfigValue("TURBO_READY_BEFORE_RGA_MIN");
   sendConfigValue("CHAMBER_VALVE_TOGGLE_INTERVAL_MIN");
+  sendConfigValue("FLUSH_INTERVAL_MIN");
+  sendConfigValue("FLUSH_CHAMBER_TOGGLE_INTERVAL_MIN");
   sendConfigValue("MIN_EXPERIMENT_INTERVAL_MIN");
   sendConfigValue("MAX_EXPERIMENT_INTERVAL_MIN");
   sendConfigValue("OXYGEN_MIN_MG_L");
