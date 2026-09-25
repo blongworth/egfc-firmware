@@ -11,6 +11,7 @@ public:
   struct Data {
     bool autostartOnBoot;
     bool preflushOnStartup;
+    bool useElectronMultiplier;
     byte rgaMasses[MAX_RGA_MASSES];
     byte rgaNumMasses;
     unsigned long rgaFilamentOffBeforeTurboStopMs;
@@ -37,6 +38,7 @@ public:
 
   bool autostartOnBoot = AUTOSTART_ON_BOOT;
   bool preflushOnStartup = PREFLUSH_ON_STARTUP;
+  bool useElectronMultiplier = RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP;
   byte rgaMasses[MAX_RGA_MASSES] = {};
   byte rgaNumMasses = 0;
   unsigned long rgaFilamentOffBeforeTurboStopMs = RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS;

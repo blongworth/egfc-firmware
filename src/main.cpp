@@ -1252,6 +1252,7 @@ bool pumpCommandAllowed() {
 void sendConfigAll() {
   sendConfigValue("AUTOSTART_ON_BOOT");
   sendConfigValue("PREFLUSH_ON_STARTUP");
+  sendConfigValue("USE_ELECTRON_MULTIPLIER");
   sendConfigValue("PUMP_ON_AT_STARTUP");
   sendConfigValue("RGA_MASSES");
   sendConfigValue("RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS");
@@ -1907,7 +1908,7 @@ bool startRGA(bool startAcquisition)
 
   Serial.println("RGA ready!");
 
-  if (RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP && !turnElectronMultiplierOn()) {
+  if (runtimeConfig.useElectronMultiplier && !turnElectronMultiplierOn()) {
     Serial.println("RGA electron multiplier failed to start");
     setSystemState(SystemState::Error);
     return false;

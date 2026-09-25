@@ -43,7 +43,11 @@ const unsigned long RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS = 60000;
 const unsigned long RGA_READY_BEFORE_ACQUISITION_MIN = 15;
 const int RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400;
 const bool RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false;
-const float RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 0.0f;
+// Max total-pressure current (A) allowed when turning the CEM on; 0 disables the check.
+// SRS recommends CEM operation at <= 5e-6 Torr. At a typical total-pressure
+// sensitivity of 1e-5 A/Torr (0.01 mA/Torr), 5e-6 Torr ~= 5e-11 A.
+// Approximate and gas-dependent; refine using the head's ST? value.
+const float RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 5.0e-11f;
 
 // Turbopump startup and readiness checks.
 const int TURBO_DEFAULT_SPEED_HZ = 1200;

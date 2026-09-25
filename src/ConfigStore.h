@@ -19,7 +19,7 @@ public:
 private:
   static const int EEPROM_ADDRESS = 0;
   static const uint32_t MAGIC = 0x45474643UL; // EGFC
-  static const uint16_t VERSION = 5;
+  static const uint16_t VERSION = 6;
 
   struct Record {
     uint32_t magic;
