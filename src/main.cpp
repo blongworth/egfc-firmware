@@ -1444,13 +1444,27 @@ bool turnElectronMultiplierOn() {
     return false;
   }
 
-  if (RGA_ELECTRON_MULTIPLIER_MAX_TP_A > 0.0f) {
+  if (RGA_ELECTRON_MULTIPLIER_MAX_TP_TORR > 0.0f) {
+    float sensitivityMaPerTorr = rga.totalPressureSensitivity(RGA_TOTAL_PRESSURE_TIMEOUT_MS);
+    if (sensitivityMaPerTorr != sensitivityMaPerTorr) {
+      sendErr("EMON", "ST timeout");
+      return false;
+    }
+    if (sensitivityMaPerTorr <= 0.0f) {
+      sendErr("EMON", "Bad sensitivity");
+      return false;
+    }
+
     float totalPressureA = rga.totalPressure(RGA_TOTAL_PRESSURE_TIMEOUT_MS);
     if (totalPressureA != totalPressureA) {
       sendErr("EMON", "TP timeout");
       return false;
     }
-    if (totalPressureA > RGA_ELECTRON_MULTIPLIER_MAX_TP_A) {
+
+    float totalPressureTorr = totalPressureA / (sensitivityMaPerTorr * 1.0e-3f);
+    Serial.print("CEM TP check (Torr): ");
+    Serial.println(totalPressureTorr, 9);
+    if (totalPressureTorr >= RGA_ELECTRON_MULTIPLIER_MAX_TP_TORR) {
       sendErr("EMON", "TP too high");
       return false;
     }

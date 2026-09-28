@@ -34,7 +34,7 @@ Firmware for the eelgrass flux chamber lander controller. The firmware controls 
 - RGA electron multiplier command bias: `1400 V` (`HV1400`); off command uses `HV0`
 - RGA electron multiplier (CEM) on RGA start: disabled by default with `RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false`; override at runtime with `CFG,USE_ELECTRON_MULTIPLIER=<true|false>`
 - RGA electron multiplier bias: `RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400` (V); override at runtime with `CFG,RGA_ELECTRON_MULTIPLIER_BIAS_V=<10-2490>`
-- RGA electron multiplier total pressure limit: `RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 5.0e-11` (~5e-6 Torr at a typical 1e-5 A/Torr sensitivity); `TP?` must be below this ion current before enabling the multiplier. Set to `0.0` to disable the check
+- RGA electron multiplier total pressure limit: `RGA_ELECTRON_MULTIPLIER_MAX_TP_TORR = 1.0e-6` (Torr); total pressure, computed from `TP?` ion current divided by the head's `ST?` sensitivity, must be below this before enabling the multiplier. Set to `0.0` to disable the check
 - RGA filament-off dwell before turbopump shutdown defaults to `60000 ms` with `RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS`.
 - RGA-ready dwell before acquisition defaults to `15 minutes` and is controlled by `RGA_READY_BEFORE_ACQUISITION_MIN`.
 - Turbo-ready dwell before RGA startup defaults to `15 minutes` and is controlled by `TURBO_READY_BEFORE_RGA_MIN`.
@@ -222,7 +222,7 @@ Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes tur
 
 - If time permits, start the turbo manually with `TON` and allow to run as long as possible (~1h) before starting the RGA (`RON`) and aquisition (`AON`). This is better for the RGA and aquisition stability.
 - RGA mass acquisition is non-blocking during `Acquiring`, but several startup, shutdown, RGA setup, and turbopump operations are still blocking.
-- Before enabling the electron multiplier, the firmware checks that acquisition is not active, the filament is on, the CDEM option query `MO?` returns `1`, and, if configured, total pressure current from `TP?` is below `RGA_ELECTRON_MULTIPLIER_MAX_TP_A`. Operationally, also verify chamber pressure is safely in the multiplier range, the configured HV/gain calibration is appropriate, and the RGA has no active error status.
+- Before enabling the electron multiplier, the firmware checks that acquisition is not active, the filament is on, the CDEM option query `MO?` returns `1`, and, if configured, total pressure (computed from `TP?` ion current divided by `ST?` sensitivity) is below `RGA_ELECTRON_MULTIPLIER_MAX_TP_TORR`. If `ST?` fails or returns a non-positive value, `EMON` is refused rather than skipping the check. Operationally, also verify chamber pressure is safely in the multiplier range, the configured HV/gain calibration is appropriate, and the RGA has no active error status.
 - If `USE_ELECTRON_MULTIPLIER` is true (default from `RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP`), each RGA start fails unless the electron multiplier turns on successfully.
 - The active SD file is named `gems_YYYY-MM-DD-HH-MM.txt`.
 - Data files rotate every 4th hour when the minute equals `10`.
