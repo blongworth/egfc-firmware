@@ -33,6 +33,7 @@ Firmware for the eelgrass flux chamber lander controller. The firmware controls 
 - RGA masses: `2, 15, 16, 18, 28, 30, 32, 33, 34, 40, 44`
 - RGA electron multiplier command bias: `1400 V` (`HV1400`); off command uses `HV0`
 - RGA electron multiplier (CEM) on RGA start: disabled by default with `RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false`; override at runtime with `CFG,USE_ELECTRON_MULTIPLIER=<true|false>`
+- RGA electron multiplier bias: `RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400` (V); override at runtime with `CFG,RGA_ELECTRON_MULTIPLIER_BIAS_V=<10-2490>`
 - RGA electron multiplier total pressure limit: `RGA_ELECTRON_MULTIPLIER_MAX_TP_A = 5.0e-11` (~5e-6 Torr at a typical 1e-5 A/Torr sensitivity); `TP?` must be below this ion current before enabling the multiplier. Set to `0.0` to disable the check
 - RGA filament-off dwell before turbopump shutdown defaults to `60000 ms` with `RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS`.
 - RGA-ready dwell before acquisition defaults to `15 minutes` and is controlled by `RGA_READY_BEFORE_ACQUISITION_MIN`.
@@ -139,6 +140,7 @@ On boot, valid saved EEPROM settings override the compiled `src/Config.h` defaul
 AUTOSTART_ON_BOOT
 PREFLUSH_ON_STARTUP
 USE_ELECTRON_MULTIPLIER
+RGA_ELECTRON_MULTIPLIER_BIAS_V
 RGA_MASSES
 RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS
 RGA_READY_BEFORE_ACQUISITION_MIN

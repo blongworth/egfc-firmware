@@ -1253,6 +1253,7 @@ void sendConfigAll() {
   sendConfigValue("AUTOSTART_ON_BOOT");
   sendConfigValue("PREFLUSH_ON_STARTUP");
   sendConfigValue("USE_ELECTRON_MULTIPLIER");
+  sendConfigValue("RGA_ELECTRON_MULTIPLIER_BIAS_V");
   sendConfigValue("PUMP_ON_AT_STARTUP");
   sendConfigValue("RGA_MASSES");
   sendConfigValue("RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS");
@@ -1455,7 +1456,7 @@ bool turnElectronMultiplierOn() {
     }
   }
 
-  if (!rga.turnElectronMultiplierOn(RGA_ELECTRON_MULTIPLIER_BIAS_V,
+  if (!rga.turnElectronMultiplierOn(runtimeConfig.rgaElectronMultiplierBiasV,
                                     RGA_ELECTRON_MULTIPLIER_TIMEOUT_MS)) {
     sendErr("EMON", "HV command failed");
     return false;

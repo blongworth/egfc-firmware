@@ -10,6 +10,7 @@ void RuntimeConfig::resetToDefaults()
   autostartOnBoot = AUTOSTART_ON_BOOT;
   preflushOnStartup = PREFLUSH_ON_STARTUP;
   useElectronMultiplier = RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP;
+  rgaElectronMultiplierBiasV = RGA_ELECTRON_MULTIPLIER_BIAS_V;
   for (byte i = 0; i < MAX_RGA_MASSES; i++) {
     rgaMasses[i] = 0;
   }
@@ -35,6 +36,7 @@ RuntimeConfig::Data RuntimeConfig::data() const
   out.autostartOnBoot = autostartOnBoot;
   out.preflushOnStartup = preflushOnStartup;
   out.useElectronMultiplier = useElectronMultiplier;
+  out.rgaElectronMultiplierBiasV = rgaElectronMultiplierBiasV;
   out.rgaNumMasses = rgaNumMasses;
   for (byte i = 0; i < rgaNumMasses && i < MAX_RGA_MASSES; i++) {
     out.rgaMasses[i] = rgaMasses[i];
@@ -57,6 +59,10 @@ bool RuntimeConfig::applyData(const Data &data)
   if (data.rgaNumMasses == 0 || data.rgaNumMasses > MAX_RGA_MASSES) {
     return false;
   }
+  if (data.rgaElectronMultiplierBiasV < RGA_ELECTRON_MULTIPLIER_BIAS_MIN_V ||
+      data.rgaElectronMultiplierBiasV > RGA_ELECTRON_MULTIPLIER_BIAS_MAX_V) {
+    return false;
+  }
 
   for (byte i = 0; i < data.rgaNumMasses; i++) {
     rgaMasses[i] = data.rgaMasses[i];
@@ -64,6 +70,7 @@ bool RuntimeConfig::applyData(const Data &data)
   autostartOnBoot = data.autostartOnBoot;
   preflushOnStartup = data.preflushOnStartup;
   useElectronMultiplier = data.useElectronMultiplier;
+  rgaElectronMultiplierBiasV = data.rgaElectronMultiplierBiasV;
   rgaNumMasses = data.rgaNumMasses;
   rgaFilamentOffBeforeTurboStopMs = data.rgaFilamentOffBeforeTurboStopMs;
   rgaReadyBeforeAcquisitionMin = data.rgaReadyBeforeAcquisitionMin;
@@ -89,6 +96,7 @@ bool RuntimeConfig::isCommandSettableKey(const char *key) const
   return strcmp(key, "AUTOSTART_ON_BOOT") == 0 ||
          strcmp(key, "PREFLUSH_ON_STARTUP") == 0 ||
          strcmp(key, "USE_ELECTRON_MULTIPLIER") == 0 ||
+         strcmp(key, "RGA_ELECTRON_MULTIPLIER_BIAS_V") == 0 ||
          strcmp(key, "RGA_MASSES") == 0 ||
          strcmp(key, "RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS") == 0 ||
          strcmp(key, "RGA_READY_BEFORE_ACQUISITION_MIN") == 0 ||
@@ -130,6 +138,20 @@ bool RuntimeConfig::setValue(const char *key, const char *value, const char **er
       *errorMessage = "invalid value";
       return false;
     }
+    return true;
+  }
+
+  if (strcmp(key, "RGA_ELECTRON_MULTIPLIER_BIAS_V") == 0) {
+    if (!parseUnsignedLongValue(value, &unsignedValue)) {
+      *errorMessage = "invalid value";
+      return false;
+    }
+    if (unsignedValue < RGA_ELECTRON_MULTIPLIER_BIAS_MIN_V ||
+        unsignedValue > RGA_ELECTRON_MULTIPLIER_BIAS_MAX_V) {
+      *errorMessage = "out of range";
+      return false;
+    }
+    rgaElectronMultiplierBiasV = static_cast<int>(unsignedValue);
     return true;
   }
 
@@ -247,6 +269,8 @@ bool RuntimeConfig::formatValue(const char *key, char *buffer, size_t bufferSize
     snprintf(buffer, bufferSize, "CFG,PREFLUSH_ON_STARTUP=%s", preflushOnStartup ? "true" : "false");
   } else if (strcmp(key, "USE_ELECTRON_MULTIPLIER") == 0) {
     snprintf(buffer, bufferSize, "CFG,USE_ELECTRON_MULTIPLIER=%s", useElectronMultiplier ? "true" : "false");
+  } else if (strcmp(key, "RGA_ELECTRON_MULTIPLIER_BIAS_V") == 0) {
+    snprintf(buffer, bufferSize, "CFG,RGA_ELECTRON_MULTIPLIER_BIAS_V=%d", rgaElectronMultiplierBiasV);
   } else if (strcmp(key, "PUMP_ON_AT_STARTUP") == 0) {
     snprintf(buffer, bufferSize, "CFG,PUMP_ON_AT_STARTUP=%s", PUMP_ON_AT_STARTUP ? "true" : "false");
   } else if (strcmp(key, "RGA_MASSES") == 0) {

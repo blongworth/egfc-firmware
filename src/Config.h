@@ -42,6 +42,9 @@ const unsigned long RGA_FILAMENT_OFF_BEFORE_TURBO_STOP_MS = 60000;
 // how long to wait after RGA is ready before starting acquisition (auto mode)
 const unsigned long RGA_READY_BEFORE_ACQUISITION_MIN = 15;
 const int RGA_ELECTRON_MULTIPLIER_BIAS_V = 1400;
+// SRS HV command accepts 10-2490 V (HV0 turns the CEM off)
+const int RGA_ELECTRON_MULTIPLIER_BIAS_MIN_V = 10;
+const int RGA_ELECTRON_MULTIPLIER_BIAS_MAX_V = 2490;
 const bool RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false;
 // Max total-pressure current (A) allowed when turning the CEM on; 0 disables the check.
 // SRS recommends CEM operation at <= 5e-6 Torr. At a typical total-pressure
