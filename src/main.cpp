@@ -191,6 +191,7 @@ void sendPumpStatus();
 void sendValvePumpStatus();
 void sendRgaTotalPressure();
 void sendRgaTotalPressureSensitivity();
+void logTotalPressureTorr(const char *label, float totalPressureTorr);
 void sendRgaErrorStatus();
 void clearRgaErrorStatus();
 bool turnElectronMultiplierOn();
@@ -1379,6 +1380,12 @@ void turnPumpOff() {
   pump.setDutyCycle(0.0f);
 }
 
+void logTotalPressureTorr(const char *label, float totalPressureTorr) {
+  char line[48];
+  snprintf(line, sizeof(line), "%s (Torr): %e", label, totalPressureTorr);
+  sendResponse(line);
+}
+
 void sendRgaTotalPressure() {
   int32_t totalPressureRaw = 0;
   if (!rga.totalPressureRaw(RGA_TOTAL_PRESSURE_TIMEOUT_MS, &totalPressureRaw)) {
@@ -1389,6 +1396,12 @@ void sendRgaTotalPressure() {
   char response[40];
   snprintf(response, sizeof(response), "TP,%ld", static_cast<long>(totalPressureRaw));
   sendResponse(response);
+
+  float sensitivityMaPerTorr = rga.totalPressureSensitivity(RGA_TOTAL_PRESSURE_TIMEOUT_MS);
+  if (sensitivityMaPerTorr == sensitivityMaPerTorr && sensitivityMaPerTorr > 0.0f) {
+    float totalPressureA = static_cast<float>(totalPressureRaw) * 1.0e-16f;
+    logTotalPressureTorr("TP", totalPressureA / (sensitivityMaPerTorr * 1.0e-3f));
+  }
 }
 
 void sendRgaTotalPressureSensitivity() {
@@ -1462,8 +1475,7 @@ bool turnElectronMultiplierOn() {
     }
 
     float totalPressureTorr = totalPressureA / (sensitivityMaPerTorr * 1.0e-3f);
-    Serial.print("CEM TP check (Torr): ");
-    Serial.println(totalPressureTorr, 9);
+    logTotalPressureTorr("CEM TP check", totalPressureTorr);
     if (totalPressureTorr >= RGA_ELECTRON_MULTIPLIER_MAX_TP_TORR) {
       sendErr("EMON", "TP too high");
       return false;
