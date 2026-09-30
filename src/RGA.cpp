@@ -259,6 +259,11 @@ float RGADevice::totalPressureSensitivity(unsigned long timeoutMs)
   return readFloatResponse("ST?\r", timeoutMs);
 }
 
+float RGADevice::partialPressureSensitivity(unsigned long timeoutMs)
+{
+  return readFloatResponse("SP?\r", timeoutMs);
+}
+
 int RGADevice::electronMultiplierOption(unsigned long timeoutMs)
 {
   return readIntResponse("MO?\r", timeoutMs);

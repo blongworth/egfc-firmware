@@ -26,6 +26,7 @@ public:
   bool totalPressureRaw(unsigned long timeoutMs, int32_t *current);
   float totalPressure(unsigned long timeoutMs);
   float totalPressureSensitivity(unsigned long timeoutMs);
+  float partialPressureSensitivity(unsigned long timeoutMs);
   int errorStatus(unsigned long timeoutMs);
   bool clearErrors(unsigned long timeoutMs, int *statusByte);
   int electronMultiplierOption(unsigned long timeoutMs);

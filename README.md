@@ -75,6 +75,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `CFGD` | Clear saved EEPROM settings and restore `Config.h` defaults. Rejected while acquiring, acquisition-starting, or busy. |
 | `TP` | Query raw RGA total pressure integer from `TP?`. Rejected while RGA mass acquisition is active. |
 | `ST` | Query RGA stored total-pressure sensitivity factor in `mA/Torr`. Rejected while RGA mass acquisition is active. |
+| `SP` | Query RGA stored partial-pressure sensitivity factor in `mA/Torr`. Rejected while RGA mass acquisition is active. |
 | `RERR` | Query the RGA STATUS error byte with `ER?`. Rejected while RGA mass acquisition is active. |
 | `RCLR` | Clear/update RGA error bytes by querying `EC?`, `ED?`, `EF?`, `EM?`, `EP?`, and `EQ?`, then report `ER?`. Rejected while acquiring. |
 | `EMON` | Turn on the RGA electron multiplier using the configured bias voltage. Requires filament on and CDEM option present. Rejected while acquiring. |
@@ -123,6 +124,7 @@ CFG,<KEY>=<VALUE>
 TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current|NA>
 TP,<raw_total_pressure_current>
 ST,<total_pressure_sensitivity_mA_per_Torr>
+SP,<partial_pressure_sensitivity_mA_per_Torr>
 RE,STATUS=<status_byte>
 PS,STATE=<on|off>,PWM=<duty_percent>,RPM=<rpm>
 VS,CHAMBER=<C1|C2|Unknown>,FLUSH=<Re|Fl|Unknown>,VALVES=<idle|moving>,PUMP=<on|off>,PWM=<duty_percent>,RPM=<rpm>
@@ -175,6 +177,7 @@ The USB serial port carries human-readable boot/debug messages plus these machin
 | `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current/NA>` | Detailed turbopump/RGA status response. |
 | `TP,` | `TP,<raw_total_pressure_current>` | Raw 4-byte signed integer from the RGA `TP?` command. Multiply by `1e-16` for amps. |
 | `ST,` | `ST,<total_pressure_sensitivity_mA_per_Torr>` | RGA stored total-pressure sensitivity factor response from the RGA `ST?` command. |
+| `SP,` | `SP,<partial_pressure_sensitivity_mA_per_Torr>` | RGA stored partial-pressure sensitivity factor response from the RGA `SP?` command. |
 | `RE,` | `RE,STATUS=<status_byte>` | RGA error status response. |
 | `PS,` | `PS,STATE=<on/off>,PWM=<duty_percent>,RPM=<rpm>` | Pump status response. |
 | `VS,` | `VS,CHAMBER=<C1/C2/Unknown>,FLUSH=<Re/Fl/Unknown>,VALVES=<idle/moving>,PUMP=<on/off>,PWM=<duty_percent>,RPM=<rpm>` | Valve and pump status response. |

@@ -191,6 +191,7 @@ void sendPumpStatus();
 void sendValvePumpStatus();
 void sendRgaTotalPressure();
 void sendRgaTotalPressureSensitivity();
+void sendRgaPartialPressureSensitivity();
 void logTotalPressureTorr(const char *label, float totalPressureTorr);
 void sendRgaErrorStatus();
 void clearRgaErrorStatus();
@@ -853,6 +854,15 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (strcmp(command, "SP") == 0) {
+    if (systemState == SystemState::Acquiring) {
+      sendErr("SP", "RGA acquiring");
+      return;
+    }
+    sendRgaPartialPressureSensitivity();
+    return;
+  }
+
   if (strcmp(command, "RERR") == 0) {
     if (systemState == SystemState::Acquiring) {
       sendErr("RERR", "RGA acquiring");
@@ -1413,6 +1423,18 @@ void sendRgaTotalPressureSensitivity() {
 
   char response[40];
   snprintf(response, sizeof(response), "ST,%.6f", sensitivity);
+  sendResponse(response);
+}
+
+void sendRgaPartialPressureSensitivity() {
+  float sensitivity = rga.partialPressureSensitivity(RGA_TOTAL_PRESSURE_TIMEOUT_MS);
+  if (sensitivity != sensitivity) {
+    sendErr("SP", "Timeout");
+    return;
+  }
+
+  char response[40];
+  snprintf(response, sizeof(response), "SP,%.6f", sensitivity);
   sendResponse(response);
 }
 
