@@ -48,7 +48,8 @@ const int RGA_ELECTRON_MULTIPLIER_BIAS_MAX_V = 2490;
 const bool RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false;
 // Max total pressure (Torr) allowed when turning the CEM on; 0 disables the check.
 // Pressure = TP? ion current (A) / ST? sensitivity (mA/Torr * 1e-3).
-const float RGA_ELECTRON_MULTIPLIER_MAX_TP_TORR = 1.0e-6f;
+// Manufacturer recommends 5e-6 or less, never greater than 1e-4.
+const float RGA_ELECTRON_MULTIPLIER_MAX_TP_TORR = 5.0e-5f;
 
 // Turbopump startup and readiness checks.
 const int TURBO_DEFAULT_SPEED_HZ = 1200;
