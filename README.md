@@ -92,7 +92,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `VRE` | Manually move the flush valve to `Re`. Also written to the SD data file as a `V:` row, same as automatic valve changes. Rejected while acquiring, while `FON` flushing is active, or while the valves are moving. Accepted during turbopump and RGA startup, and cancels the startup preflush routine. |
 | `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `TON` | Start turbopump only. |
-| `TOFF` | Stop acquisition, then stop turbo only if RGA is off. |
+| `TOFF` | Stop acquisition, then stop turbo only if RGA is off. Cancels an in-progress `TON`/`RUN`/`RDY` startup (that command gets `ERR,<cmd>,Cancelled`). |
 | `RON` | Start RGA only if the turbopump is ready. |
 | `ROFF` | Stop acquisition and turn off the RGA filament, leaving turbo running if ready. |
 | `AON` | Start acquisition immediately if RGA is ready. |

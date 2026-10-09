@@ -209,6 +209,7 @@ const char *systemStateName(SystemState state);
 void setSystemState(SystemState state);
 bool beginTransition(const char *command);
 void clearTransition();
+void cancelStartupTransition(const char *reason);
 void stopAcquisition();
 void finishPendingRgaScanBeforeStop();
 bool stopRgaOnly();
@@ -1011,6 +1012,7 @@ void handleCommand(char *command) {
   }
 
   if (strcmp(command, "TOFF") == 0) {
+    cancelStartupTransition("Cancelled");
     if (!beginTransition("TOFF")) {
       sendErr("TOFF", "Busy");
       return;
@@ -1573,6 +1575,7 @@ void updateAcquisitionStartDelay() {
 
   if (systemState != SystemState::AcquisitionStarting) {
     acquisitionStartPending = false;
+    cancelStartupTransition("Acquisition cancelled");
     return;
   }
 
@@ -1623,8 +1626,20 @@ void clearTransition() {
   activeTransitionCommand[0] = '\0';
 }
 
+void cancelStartupTransition(const char *reason) {
+  if (strcmp(activeTransitionCommand, "TON") == 0 ||
+      strcmp(activeTransitionCommand, "RUN") == 0 ||
+      strcmp(activeTransitionCommand, "RDY") == 0) {
+    sendErr(activeTransitionCommand, reason);
+    clearTransition();
+  }
+}
+
 void stopAcquisition() {
-  acquisitionStartPending = false;
+  if (acquisitionStartPending) {
+    acquisitionStartPending = false;
+    cancelStartupTransition("Acquisition cancelled");
+  }
   finishPendingRgaScanBeforeStop();
   if (systemState == SystemState::Acquiring || systemState == SystemState::AcquisitionStarting) {
     setSystemState(SystemState::RgaReady);
@@ -1665,7 +1680,7 @@ bool stopRgaOnly() {
 }
 
 void beginTurboShutdown() {
-  if (turboShutdownState != TurboShutdownState::Idle) {
+  if (turboShutdownState != TurboShutdownState::Idle && turboShutdownState != TurboShutdownState::Failed) {
     return;
   }
 
