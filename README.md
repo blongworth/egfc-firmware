@@ -93,8 +93,8 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `OFF` | Safe stop all: stop acquisition, verify RGA filament is off, then stop turbo. |
 | `TON` | Start turbopump only. |
 | `TOFF` | Stop acquisition, then stop turbo only if RGA is off. Cancels an in-progress `TON`/`RUN`/`RDY` startup (that command gets `ERR,<cmd>,Cancelled`). |
-| `RON` | Start RGA only if the turbopump is ready. |
-| `ROFF` | Stop acquisition and turn off the RGA filament, leaving turbo running if ready. |
+| `RON` | Start RGA only if the turbopump is ready. Rejected with `ERR,RON,Shutting down` while a `TOFF`/`OFF` shutdown is in progress. |
+| `ROFF` | Stop acquisition and turn off the RGA filament, leaving turbo running if ready. Rejected with `ERR,ROFF,Shutting down` while a `TOFF`/`OFF` shutdown is in progress (the shutdown turns the filament off itself). |
 | `AON` | Start acquisition immediately if RGA is ready. |
 | `AOFF` | Stop acquisition and leave RGA ready. |
 | `RUN` | Full start: turbopump, ready dwell, RGA, then acquisition. |

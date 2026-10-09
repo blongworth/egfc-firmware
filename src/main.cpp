@@ -169,6 +169,7 @@ void updateAutostart();
 void beginAcquisitionStartDelay(bool resetTimer);
 void updateAcquisitionStartDelay();
 void beginTurboShutdown();
+bool turboShutdownInProgress();
 void updateTurboShutdown();
 void retryTurboShutdownFilamentOff();
 void failTurboShutdown(const char *message);
@@ -1023,6 +1024,10 @@ void handleCommand(char *command) {
   }
 
   if (isCommand(command, "RON", "!Z12")) {
+    if (turboShutdownInProgress()) {
+      sendErr("RON", "Shutting down");
+      return;
+    }
     if (!turbo.isReady(TB_Spd)) {
       sendErr("RON", "Turbo not ready");
       return;
@@ -1036,6 +1041,10 @@ void handleCommand(char *command) {
   }
 
   if (isCommand(command, "ROFF", "!ZFS")) {
+    if (turboShutdownInProgress()) {
+      sendErr("ROFF", "Shutting down");
+      return;
+    }
     if (!stopRgaOnly()) {
       sendErr("ROFF", "RGA filament did not confirm off");
       return;
@@ -1677,6 +1686,11 @@ bool stopRgaOnly() {
   }
   setSystemState(turbo.isReady(TB_Spd) ? SystemState::TurboReady : SystemState::Off);
   return true;
+}
+
+bool turboShutdownInProgress() {
+  return systemState == SystemState::Stopping ||
+         (turboShutdownState != TurboShutdownState::Idle && turboShutdownState != TurboShutdownState::Failed);
 }
 
 void beginTurboShutdown() {
