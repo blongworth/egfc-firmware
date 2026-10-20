@@ -50,6 +50,13 @@ const bool RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP = false;
 // Pressure = TP? ion current (A) / ST? sensitivity (mA/Torr * 1e-3).
 // Manufacturer recommends 5e-6 or less, never greater than 1e-4.
 const float RGA_ELECTRON_MULTIPLIER_MAX_TP_TORR = 5.0e-5f;
+// Ionizer degas (SRS DG command): 0-20 min, DG* default is 3 min.
+const int RGA_DEGAS_DEFAULT_MIN = 3;
+const int RGA_DEGAS_MAX_MIN = 20;
+// extra time past the requested degas minutes before the firmware gives up
+const unsigned long RGA_DEGAS_TIMEOUT_MARGIN_MS = 60000;
+// wait after DG0 for the RGA to restore pre-degas emission ("a few seconds")
+const unsigned long RGA_DEGAS_ABORT_SETTLE_MS = 5000;
 
 // Turbopump startup and readiness checks.
 const int TURBO_DEFAULT_SPEED_HZ = 1200;

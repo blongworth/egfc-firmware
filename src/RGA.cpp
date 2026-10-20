@@ -143,44 +143,92 @@ void RGADevice::requestFilamentStatusNonBlocking()
   while (serial.available()) {
     serial.read();
   }
-  filamentStatusLength = 0;
-  filamentStatusBuffer[0] = '\0';
+  resetResponseLine();
   write("FL?\r");
 }
 
 bool RGADevice::readFilamentStatusNonBlocking(float *status)
 {
+  const char *valueText = readResponseLineNonBlocking();
+  if (!valueText) {
+    return false;
+  }
+
+  if ((*valueText < '0' || *valueText > '9') &&
+      *valueText != '-' &&
+      *valueText != '+' &&
+      *valueText != '.') {
+    valueText++;
+  }
+  if (status) {
+    *status = atof(valueText);
+  }
+  return true;
+}
+
+// Start an ionizer degas. The RGA answers with the STATUS byte as ASCII
+// <n><LF><CR> when degas completes; any byte sent before then aborts it.
+void RGADevice::startDegasNonBlocking(int minutes)
+{
+  while (serial.available()) {
+    serial.read();
+  }
+  resetResponseLine();
+
+  char command[8];
+  snprintf(command, sizeof(command), "DG%d\r", minutes);
+  write(command);
+}
+
+bool RGADevice::readStatusByteNonBlocking(int *status)
+{
+  const char *valueText = readResponseLineNonBlocking();
+  if (!valueText) {
+    return false;
+  }
+
+  if (status) {
+    *status = atoi(valueText);
+  }
+  return true;
+}
+
+// DG0 aborts a running degas and echoes nothing. The RGA needs a few seconds
+// afterwards to restore the pre-degas emission; the caller handles the wait.
+void RGADevice::stopDegas()
+{
+  write("DG0\r");
+}
+
+void RGADevice::resetResponseLine()
+{
+  responseLineLength = 0;
+  responseLineBuffer[0] = '\0';
+}
+
+// Collect one non-empty CR/LF-terminated line. Returns the line once complete,
+// valid until the next call, or nullptr while still waiting.
+const char *RGADevice::readResponseLineNonBlocking()
+{
   while (serial.available()) {
     char c = serial.read();
     if (c == '\r' || c == '\n') {
-      if (filamentStatusLength == 0) {
+      if (responseLineLength == 0) {
         continue;
       }
-      filamentStatusBuffer[filamentStatusLength] = '\0';
-      const char *valueText = filamentStatusBuffer;
-      if ((*valueText < '0' || *valueText > '9') &&
-          *valueText != '-' &&
-          *valueText != '+' &&
-          *valueText != '.') {
-        valueText++;
-      }
-      if (status) {
-        *status = atof(valueText);
-      }
-      filamentStatusLength = 0;
-      filamentStatusBuffer[0] = '\0';
-      return true;
+      responseLineBuffer[responseLineLength] = '\0';
+      responseLineLength = 0;
+      return responseLineBuffer;
     }
 
-    if (filamentStatusLength < sizeof(filamentStatusBuffer) - 1) {
-      filamentStatusBuffer[filamentStatusLength++] = c;
+    if (responseLineLength < sizeof(responseLineBuffer) - 1) {
+      responseLineBuffer[responseLineLength++] = c;
     } else {
-      filamentStatusLength = 0;
-      filamentStatusBuffer[0] = '\0';
+      resetResponseLine();
     }
   }
 
-  return false;
+  return nullptr;
 }
 
 bool RGADevice::clearElectrometer(unsigned long timeoutMs)

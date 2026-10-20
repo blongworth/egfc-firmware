@@ -99,6 +99,7 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `AOFF` | Stop acquisition and leave RGA ready. |
 | `RUN` | Full start: turbopump, ready dwell, RGA, then acquisition. |
 | `RDY` | Full start to RGA ready, without acquisition. |
+| `DG[n]` | RGA ionizer degas for `n` minutes (`1`-`20`); bare `DG` uses the default `3`. Allowed only from `Turbo ready` or `RGA ready` with the turbopump ready. Rejected with `ERR,DG,RGA acquiring` while acquiring or acquisition-starting (send `AOFF` first). Returns `ACK,DG`, then `DONE,DG` on completion, or `ERR,DG,STATUS=<n>` if the RGA reports a nonzero STATUS byte. Afterwards the state returns to `Turbo ready`, or `RGA ready` after a full RGA restart (`CL`/`CA`, plus CDEM if `USE_ELECTRON_MULTIPLIER`). `DG0` aborts a running degas and returns `OK,DG`. `OFF`, `TOFF`, and `ROFF` abort it with `ERR,DG,Cancelled`. A lost turbopump or a timeout (`n` minutes plus `RGA_DEGAS_TIMEOUT_MARGIN_MS`) aborts it and enters `Error`. |
 | `SPD####` | Set turbopump target speed in Hz, for example `SPD1200`. |
 | `PMP#` | Set pump PWM duty cycle percent from `0` to `100`, for example `PMP50` or `PMP12.5`. Rejected while acquiring. |
 | `TIME<unix>` | Set RTC/system time from Unix time. |
@@ -119,7 +120,7 @@ Legacy aliases are still accepted:
 Status responses use:
 
 ```text
-S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off>
+S,<state>,SPD=<target>,TURBO=<ready|not ready>,RGA=<on|off|degas>
 CFG,<KEY>=<VALUE>
 TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current|NA>
 TP,<raw_total_pressure_current>
@@ -132,9 +133,9 @@ VS,CHAMBER=<C1|C2|Unknown>,FLUSH=<Re|Fl|Unknown>,VALVES=<idle|moving>,PUMP=<on|o
 
 Immediate commands return `OK,<command>` when complete. Transition commands return `ACK,<command>` when accepted and `DONE,<command>` when the target state is reached. Errors use `ERR,<command>,<message>`.
 
-Transition commands are `TON`, `RUN`, `RDY`, and `OFF`. `OFF` can interrupt another active transition. Other transition commands return `ERR,<command>,Busy` while a transition is active.
+Transition commands are `TON`, `RUN`, `RDY`, `DG`, and `OFF`. `OFF` can interrupt another active transition. Other transition commands return `ERR,<command>,Busy` while a transition is active.
 
-Readable states are `Off`, `Turbo starting`, `Turbo ready`, `RGA starting`, `RGA ready`, `Acquisition starting`, `Acquiring`, `Stopping`, and `Error`.
+Readable states are `Off`, `Turbo starting`, `Turbo ready`, `RGA starting`, `RGA ready`, `Acquisition starting`, `Acquiring`, `Stopping`, `Degassing`, and `Error`.
 
 On boot, valid saved EEPROM settings override the compiled `src/Config.h` defaults. Serial `CFG` writes change the current RAM settings only until `CFGS` is sent. Command-settable keys are:
 
@@ -172,7 +173,7 @@ The USB serial port carries human-readable boot/debug messages plus these machin
 
 | Prefix | Format | Meaning |
 | --- | --- | --- |
-| `S,` | `S,<state>,SPD=<target>,TURBO=<ready/not ready>,RGA=<on/off>` | Current readable status response. |
+| `S,` | `S,<state>,SPD=<target>,TURBO=<ready/not ready>,RGA=<on/off/degas>` | Current readable status response. |
 | `CFG,` | `CFG,<KEY>=<VALUE>` | Runtime config response. |
 | `TS,` | `TS,ERR=<error>,SPD=<actual>,PWR=<watts>,V=<volts>,ETEMP=<degC>,BTEMP=<degC>,MTEMP=<degC>,RGA=<filament>,TP=<raw_total_pressure_current/NA>` | Detailed turbopump/RGA status response. |
 | `TP,` | `TP,<raw_total_pressure_current>` | Raw 4-byte signed integer from the RGA `TP?` command. Multiply by `1e-16` for amps. |
@@ -202,7 +203,9 @@ Simple status events use a numeric payload, for example:
 !:2026-06-02T14:30:00Z,5
 ```
 
-Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, RGA filament status, raw RGA total pressure current, and pump RPM. Multiply the raw total pressure value by `1e-16` for amps.
+Payload `13` marks the start of an RGA degas and `14` marks its completion.
+
+Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes turbopump error code, actual speed, drive power, drive voltage, electronics temperature, pump-bottom temperature, motor temperature, RGA filament status, raw RGA total pressure current, and pump RPM. Multiply the raw total pressure value by `1e-16` for amps. While degassing, the RGA is not queried and the filament and total pressure fields in the `!:` and `TS,` rows read `NA`.
 
 ## Running the System
 
@@ -226,6 +229,7 @@ Detailed status rows are sent when `StatusMsg(3)` runs. The payload includes tur
 - If time permits, start the turbo manually with `TON` and allow to run as long as possible (~1h) before starting the RGA (`RON`) and aquisition (`AON`). This is better for the RGA and aquisition stability.
 - RGA mass acquisition is non-blocking during `Acquiring`, but several startup, shutdown, RGA setup, and turbopump operations are still blocking.
 - Before enabling the electron multiplier, the firmware checks that acquisition is not active, the filament is on, the CDEM option query `MO?` returns `1`, and, if configured, total pressure (computed from `TP?` ion current divided by `ST?` sensitivity) is below `RGA_ELECTRON_MULTIPLIER_MAX_TP_TORR`. If `ST?` fails or returns a non-positive value, `EMON` is refused rather than skipping the check. Operationally, also verify chamber pressure is safely in the multiplier range, the configured HV/gain calibration is appropriate, and the RGA has no active error status.
+- Degas (`DG`) shortens filament life, so prefer a bakeout when possible. Any byte sent to the RGA aborts a degas, so while degassing, `TP`, `ST`, `SP`, `RERR`, `RCLR`, `EMON`, `EMOFF`, `RON`, `AON`, `CFGS`, `CFGL`, and `CFGD` are rejected with `ERR,<command>,RGA degassing`, and `?`, `TSTAT`, and `!:` rows don't query the RGA. Degas turns the CDEM off and leaves it off. The CDEM is turned back on only when degas started from `RGA ready` and `USE_ELECTRON_MULTIPLIER` is true.
 - If `USE_ELECTRON_MULTIPLIER` is true (default from `RGA_ELECTRON_MULTIPLIER_ON_AT_STARTUP`), each RGA start fails unless the electron multiplier turns on successfully.
 - The active SD file is named `gems_YYYY-MM-DD-HH-MM.txt`.
 - Data files rotate every 4th hour when the minute equals `10`.

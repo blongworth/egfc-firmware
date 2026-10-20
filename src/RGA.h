@@ -20,6 +20,9 @@ public:
   void discardFilamentOffAck();
   void requestFilamentStatusNonBlocking();
   bool readFilamentStatusNonBlocking(float *status);
+  void startDegasNonBlocking(int minutes);
+  bool readStatusByteNonBlocking(int *status);
+  void stopDegas();
   bool clearElectrometer(unsigned long timeoutMs);
   bool calibrateAll(unsigned long timeoutMs);
   bool prepareForMeasurements(int noiseFloor, unsigned long timeoutMs);
@@ -42,8 +45,8 @@ public:
 
 private:
   HardwareSerial &serial;
-  char filamentStatusBuffer[16] = {};
-  size_t filamentStatusLength = 0;
+  char responseLineBuffer[16] = {};
+  size_t responseLineLength = 0;
 
   size_t write(uint8_t value);
   size_t write(const char *command);
@@ -53,5 +56,7 @@ private:
   int readIntResponse(const char *command, unsigned long timeoutMs);
   float readFloatResponse(const char *command, unsigned long timeoutMs);
   float readStatus(const char *command, int start, int end);
+  void resetResponseLine();
+  const char *readResponseLineNonBlocking();
   bool readStatusBytes(unsigned long timeoutMs);
 };

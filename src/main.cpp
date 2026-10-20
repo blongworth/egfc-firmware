@@ -100,6 +100,7 @@ enum class SystemState {
   AcquisitionStarting,
   Acquiring,
   Stopping,
+  Degassing,
   Error
 };
 
@@ -155,6 +156,17 @@ elapsedMillis rgaScanTimer;
 byte rgaMassIndex = 0;
 int activeRgaMass = 0;
 
+enum class DegasState {
+  Idle,
+  Running
+};
+
+DegasState degasState = DegasState::Idle;
+elapsedMillis degasTimer;
+elapsedMillis degasPollTimer;
+int degasMinutes = RGA_DEGAS_DEFAULT_MIN;
+SystemState degasReturnState = SystemState::TurboReady;
+
 const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 
 #if ENABLE_LOOP_RATE_LOG
@@ -175,7 +187,16 @@ void retryTurboShutdownFilamentOff();
 void failTurboShutdown(const char *message);
 void finishTurboShutdown();
 bool startRGA(bool startAcquisition);
+bool rgaDegassing();
+void handleDegasCommand(const char *command);
+void updateDegas();
+void finishDegas(int status);
+bool restoreAfterDegas();
+void abortDegas();
+void cancelDegas(const char *reason);
 void StatusMsg(int M);
+void formatRgaStatusFields(char *filamentText, size_t filamentSize,
+                           char *totalPressureText, size_t totalPressureSize);
 void readSerialCommand();
 #ifdef USE_ETHERNET
 void readUdpCommand();
@@ -398,6 +419,7 @@ void loop() {
   }
 
   updateTurboShutdown();
+  updateDegas();
 
   // cycle file every 4 hours
   if (hour() % 4 == 0)
@@ -825,6 +847,10 @@ void handleCommand(char *command) {
   }
 
   if (strcmp(command, "CFGS") == 0 || strcmp(command, "CFGL") == 0 || strcmp(command, "CFGD") == 0) {
+    if (rgaDegassing()) {
+      sendErr(command, "RGA degassing");
+      return;
+    }
     if (!handleConfigStoreCommand(command)) {
       sendErr(command, "Failed");
     }
@@ -843,6 +869,10 @@ void handleCommand(char *command) {
       sendErr("TP", "RGA acquiring");
       return;
     }
+    if (rgaDegassing()) {
+      sendErr("TP", "RGA degassing");
+      return;
+    }
     sendRgaTotalPressure();
     return;
   }
@@ -850,6 +880,10 @@ void handleCommand(char *command) {
   if (strcmp(command, "ST") == 0) {
     if (systemState == SystemState::Acquiring) {
       sendErr("ST", "RGA acquiring");
+      return;
+    }
+    if (rgaDegassing()) {
+      sendErr("ST", "RGA degassing");
       return;
     }
     sendRgaTotalPressureSensitivity();
@@ -861,6 +895,10 @@ void handleCommand(char *command) {
       sendErr("SP", "RGA acquiring");
       return;
     }
+    if (rgaDegassing()) {
+      sendErr("SP", "RGA degassing");
+      return;
+    }
     sendRgaPartialPressureSensitivity();
     return;
   }
@@ -870,6 +908,10 @@ void handleCommand(char *command) {
       sendErr("RERR", "RGA acquiring");
       return;
     }
+    if (rgaDegassing()) {
+      sendErr("RERR", "RGA degassing");
+      return;
+    }
     sendRgaErrorStatus();
     return;
   }
@@ -877,6 +919,10 @@ void handleCommand(char *command) {
   if (strcmp(command, "RCLR") == 0) {
     if (systemState == SystemState::Acquiring) {
       sendErr("RCLR", "RGA acquiring");
+      return;
+    }
+    if (rgaDegassing()) {
+      sendErr("RCLR", "RGA degassing");
       return;
     }
     clearRgaErrorStatus();
@@ -993,6 +1039,7 @@ void handleCommand(char *command) {
 
   if (isCommand(command, "OFF", "!Z20") || strcmp(command, "!Z21") == 0 || strcmp(command, "!Z22") == 0) {
     autostartPending = false;
+    cancelDegas("Cancelled");
     clearTransition();
     beginTransition("OFF");
     fullStartRequested = false;
@@ -1014,6 +1061,7 @@ void handleCommand(char *command) {
 
   if (strcmp(command, "TOFF") == 0) {
     cancelStartupTransition("Cancelled");
+    cancelDegas("Cancelled");
     if (!beginTransition("TOFF")) {
       sendErr("TOFF", "Busy");
       return;
@@ -1024,6 +1072,10 @@ void handleCommand(char *command) {
   }
 
   if (isCommand(command, "RON", "!Z12")) {
+    if (rgaDegassing()) {
+      sendErr("RON", "RGA degassing");
+      return;
+    }
     if (turboShutdownInProgress()) {
       sendErr("RON", "Shutting down");
       return;
@@ -1045,6 +1097,7 @@ void handleCommand(char *command) {
       sendErr("ROFF", "Shutting down");
       return;
     }
+    cancelDegas("Cancelled");
     if (!stopRgaOnly()) {
       sendErr("ROFF", "RGA filament did not confirm off");
       return;
@@ -1056,6 +1109,10 @@ void handleCommand(char *command) {
   if (strcmp(command, "AON") == 0) {
     if (systemState == SystemState::Acquiring) {
       sendOk("AON");
+      return;
+    }
+    if (rgaDegassing()) {
+      sendErr("AON", "RGA degassing");
       return;
     }
     if (systemState != SystemState::RgaReady) {
@@ -1096,6 +1153,11 @@ void handleCommand(char *command) {
     setSystemState(SystemState::TurboStarting);
     beginTurboStartup(TB_Spd, true, false);
     sendAck("RDY");
+    return;
+  }
+
+  if (strncmp(command, "DG", 2) == 0) {
+    handleDegasCommand(command);
     return;
   }
 
@@ -1240,6 +1302,7 @@ bool handleConfigStoreCommand(const char *command) {
 bool configChangeAllowed() {
   return systemState != SystemState::Acquiring &&
          systemState != SystemState::AcquisitionStarting &&
+         systemState != SystemState::Degassing &&
          activeTransitionCommand[0] == '\0';
 }
 
@@ -1332,31 +1395,30 @@ void sendErr(const char *command, const char *message) {
 
 void sendStatus() {
   bool turboReady = turbo.isReady(TB_Spd);
-  float filament = rga.filamentStatus();
+  // any byte sent to the RGA aborts a degas, so don't query FL? while degassing
+  const char *rgaText = "degas";
+  if (!rgaDegassing()) {
+    rgaText = rga.filamentStatus() > 0.01 ? "on" : "off";
+  }
   char response[120];
   snprintf(response, sizeof(response), "S,%s,SPD=%d,TURBO=%s,RGA=%s",
            systemStateName(systemState),
            TB_Spd,
            turboReady ? "ready" : "not ready",
-           filament > 0.01 ? "on" : "off");
+           rgaText);
   sendResponse(response);
 }
 
 void sendTurboStatus() {
   TurboDetailedStatus turboStatus = turbo.readDetailedStatus();
-  float filament = rga.filamentStatus();
-  int32_t totalPressureRaw = 0;
-  bool hasTotalPressure = rga.totalPressureRaw(RGA_TOTAL_PRESSURE_TIMEOUT_MS, &totalPressureRaw);
+  char filamentText[16];
   char totalPressureText[16];
-  if (hasTotalPressure) {
-    snprintf(totalPressureText, sizeof(totalPressureText), "%ld", static_cast<long>(totalPressureRaw));
-  } else {
-    snprintf(totalPressureText, sizeof(totalPressureText), "NA");
-  }
+  formatRgaStatusFields(filamentText, sizeof(filamentText),
+                        totalPressureText, sizeof(totalPressureText));
 
   char response[180];
   snprintf(response, sizeof(response),
-           "TS,ERR=%d,SPD=%d,PWR=%d,V=%d,ETEMP=%d,BTEMP=%d,MTEMP=%d,RGA=%.2f,TP=%s",
+           "TS,ERR=%d,SPD=%d,PWR=%d,V=%d,ETEMP=%d,BTEMP=%d,MTEMP=%d,RGA=%s,TP=%s",
            turboStatus.error,
            turboStatus.actualSpeedHz,
            turboStatus.drivePowerW,
@@ -1364,7 +1426,7 @@ void sendTurboStatus() {
            turboStatus.electronicsTemp,
            turboStatus.pumpBottomTemp,
            turboStatus.motorTemp,
-           filament,
+           filamentText,
            totalPressureText);
   sendResponse(response);
 }
@@ -1479,6 +1541,11 @@ bool turnElectronMultiplierOn() {
     return false;
   }
 
+  if (rgaDegassing()) {
+    sendErr("EMON", "RGA degassing");
+    return false;
+  }
+
   if (rga.filamentStatus() <= 0.01f) {
     sendErr("EMON", "Filament off");
     return false;
@@ -1527,6 +1594,11 @@ bool turnElectronMultiplierOn() {
 bool turnElectronMultiplierOff() {
   if (systemState == SystemState::Acquiring) {
     sendErr("EMOFF", "RGA acquiring");
+    return false;
+  }
+
+  if (rgaDegassing()) {
+    sendErr("EMOFF", "RGA degassing");
     return false;
   }
 
@@ -1608,6 +1680,7 @@ const char *systemStateName(SystemState state) {
     case SystemState::AcquisitionStarting: return "Acquisition starting";
     case SystemState::Acquiring: return "Acquiring";
     case SystemState::Stopping: return "Stopping";
+    case SystemState::Degassing: return "Degassing";
     case SystemState::Error: return "Error";
   }
   return "Error";
@@ -2000,6 +2073,156 @@ bool startRGA(bool startAcquisition)
   return true;
 }
 
+bool rgaDegassing() {
+  return degasState != DegasState::Idle;
+}
+
+// DG[n]: ionizer degas for n minutes (bare DG uses the default), DG0 aborts.
+// Degas never interrupts acquisition; send AOFF first.
+void handleDegasCommand(const char *command) {
+  if (systemState == SystemState::Acquiring || systemState == SystemState::AcquisitionStarting) {
+    sendErr("DG", "RGA acquiring");
+    return;
+  }
+
+  int minutes = RGA_DEGAS_DEFAULT_MIN;
+  if (command[2] != '\0') {
+    char *end = nullptr;
+    long value = strtol(command + 2, &end, 10);
+    if (end == command + 2 || *end != '\0' || value < 0 || value > RGA_DEGAS_MAX_MIN) {
+      sendErr("DG", "Invalid minutes");
+      return;
+    }
+    minutes = static_cast<int>(value);
+  }
+
+  if (minutes == 0) {
+    if (!rgaDegassing()) {
+      sendErr("DG", "Not degassing");
+      return;
+    }
+    abortDegas();
+    if (!restoreAfterDegas()) {
+      sendErr("DG", "RGA failed to start");
+      return;
+    }
+    sendOk("DG");
+    return;
+  }
+
+  if (rgaDegassing()) {
+    sendErr("DG", "RGA degassing");
+    return;
+  }
+  if (turboShutdownInProgress()) {
+    sendErr("DG", "Shutting down");
+    return;
+  }
+  if (!turbo.isReady(TB_Spd)) {
+    sendErr("DG", "Turbo not ready");
+    return;
+  }
+  if (systemState != SystemState::TurboReady && systemState != SystemState::RgaReady) {
+    sendErr("DG", "Not ready");
+    return;
+  }
+  if (!beginTransition("DG")) {
+    sendErr("DG", "Busy");
+    return;
+  }
+
+  degasReturnState = systemState;
+  degasMinutes = minutes;
+  setSystemState(SystemState::Degassing);
+  StatusMsg(13);
+  rga.startDegasNonBlocking(minutes);
+  degasTimer = 0;
+  degasPollTimer = 0;
+  degasState = DegasState::Running;
+  sendAck("DG");
+}
+
+void updateDegas() {
+  if (degasState != DegasState::Running) {
+    return;
+  }
+
+  int status = 0;
+  if (rga.readStatusByteNonBlocking(&status)) {
+    Serial.print("RGA degas status: ");
+    Serial.println(status);
+    StatusMsg(14);
+    finishDegas(status);
+    return;
+  }
+
+  // the turbopump is on its own serial port, so polling it is safe here
+  if (degasPollTimer >= TURBO_STARTUP_POLL_MS) {
+    degasPollTimer = 0;
+    if (!turbo.isReady(TB_Spd)) {
+      Serial.println("Turbo not ready, aborting degas");
+      abortDegas();
+      StatusMsg(5);
+      setSystemState(SystemState::Error);
+      sendErr("DG", "Turbo not ready");
+      return;
+    }
+  }
+
+  if (degasTimer >= degasMinutes * MILLISECONDS_PER_MINUTE + RGA_DEGAS_TIMEOUT_MARGIN_MS) {
+    Serial.println("RGA degas timeout");
+    abortDegas();
+    StatusMsg(5);
+    setSystemState(SystemState::Error);
+    sendErr("DG", "Timeout");
+  }
+}
+
+void finishDegas(int status) {
+  degasState = DegasState::Idle;
+  bool restored = restoreAfterDegas();
+  if (!restored) {
+    sendErr("DG", "RGA failed to start");
+  } else if (status == 0) {
+    sendDone("DG");
+  } else {
+    char message[20];
+    snprintf(message, sizeof(message), "STATUS=%d", status);
+    sendErr("DG", message);
+  }
+  clearTransition();
+}
+
+// Degas leaves the CDEM off and restores the filament, so an RGA that was
+// ready beforehand is fully re-prepared (recalibration and CDEM, if enabled).
+bool restoreAfterDegas() {
+  if (degasReturnState == SystemState::RgaReady) {
+    return startRGA(false);
+  }
+  setSystemState(SystemState::TurboReady);
+  return true;
+}
+
+// Blocking, like ensureFilamentOff: DG0, then wait for the RGA to restore
+// its pre-degas emission. Leaves systemState for the caller to set.
+void abortDegas() {
+  rga.stopDegas();
+  delay(RGA_DEGAS_ABORT_SETTLE_MS);
+  rga.flushInput();
+  degasState = DegasState::Idle;
+  if (strcmp(activeTransitionCommand, "DG") == 0) {
+    clearTransition();
+  }
+}
+
+void cancelDegas(const char *reason) {
+  if (!rgaDegassing()) {
+    return;
+  }
+  abortDegas();
+  sendErr("DG", reason);
+}
+
 void logStatusRow(const char *statusRow) {
   if (dataFile) {
     dataFile.println(statusRow);
@@ -2010,24 +2233,39 @@ void logStatusRow(const char *statusRow) {
   }
 }
 
+// Filament and raw total pressure for the TS and !: rows. Both are NA while
+// degassing, since any query would abort the degas.
+void formatRgaStatusFields(char *filamentText, size_t filamentSize,
+                           char *totalPressureText, size_t totalPressureSize) {
+  if (rgaDegassing()) {
+    snprintf(filamentText, filamentSize, "NA");
+    snprintf(totalPressureText, totalPressureSize, "NA");
+    return;
+  }
+
+  snprintf(filamentText, filamentSize, "%.2f", rga.filamentStatus());
+  int32_t totalPressureRaw = 0;
+  if (rga.totalPressureRaw(RGA_TOTAL_PRESSURE_TIMEOUT_MS, &totalPressureRaw)) {
+    snprintf(totalPressureText, totalPressureSize, "%ld", static_cast<long>(totalPressureRaw));
+  } else {
+    snprintf(totalPressureText, totalPressureSize, "NA");
+  }
+}
+
 void buildStatusRow(char *statusRow, size_t statusRowSize, int M) {
   char iso8601Time[25];
   getTimeISO8601(iso8601Time, sizeof(iso8601Time));
 
   if (M == 3) {
     TurboDetailedStatus turboStatus = turbo.readDetailedStatus();
-    float SRS = rga.filamentStatus();
-    int32_t totalPressureRaw = 0;
+    char filamentText[16];
     char totalPressureText[16];
-    if (rga.totalPressureRaw(RGA_TOTAL_PRESSURE_TIMEOUT_MS, &totalPressureRaw)) {
-      snprintf(totalPressureText, sizeof(totalPressureText), "%ld", static_cast<long>(totalPressureRaw));
-    } else {
-      snprintf(totalPressureText, sizeof(totalPressureText), "NA");
-    }
-    snprintf(statusRow, statusRowSize, "!:%s,%d,%d,%d,%d,%d,%d,%d,%.2f,%s,%.2f",
+    formatRgaStatusFields(filamentText, sizeof(filamentText),
+                          totalPressureText, sizeof(totalPressureText));
+    snprintf(statusRow, statusRowSize, "!:%s,%d,%d,%d,%d,%d,%d,%d,%s,%s,%.2f",
              iso8601Time, turboStatus.error, turboStatus.actualSpeedHz, turboStatus.drivePowerW,
              turboStatus.driveVoltage, turboStatus.electronicsTemp, turboStatus.pumpBottomTemp,
-             turboStatus.motorTemp, SRS, totalPressureText, pump.rpm());
+             turboStatus.motorTemp, filamentText, totalPressureText, pump.rpm());
   } else {
     snprintf(statusRow, statusRowSize, "!:%s,%d", iso8601Time, M);
   }
