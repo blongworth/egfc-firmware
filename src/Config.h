@@ -13,6 +13,8 @@ const uint8_t LED_PIN = 13;
 const int SD_CHIP_SELECT = BUILTIN_SDCARD;
 const int SURFACE_COMMAND_BUFFER_SIZE = 100;
 #define ENABLE_LOOP_RATE_LOG 0
+// Max time between SD flushes; bounds data loss on power cut.
+const unsigned long SD_FLUSH_INTERVAL_MS = 10000;
 const bool AUTOSTART_ON_BOOT = false;
 
 // RGA serial, startup, mass scan, and detector settings.

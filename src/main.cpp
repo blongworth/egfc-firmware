@@ -152,6 +152,10 @@ enum class RgaAcquisitionState {
 
 RgaAcquisitionState rgaAcquisitionState = RgaAcquisitionState::Idle;
 elapsedMillis rgaScanTimer;
+elapsedMillis sdFlushTimer;
+#if ENABLE_LOOP_RATE_LOG
+unsigned long sdFlushMaxMicros = 0;
+#endif
 byte rgaMassIndex = 0;
 int activeRgaMass = 0;
 
@@ -161,6 +165,7 @@ const char compileTime[] = " Compiled on " __DATE__ " " __TIME__;
 void printLoopRate();
 #endif
 void createNewDataFile();
+void maybeFlushDataFile();
 void GEMS_Start(int TB_Spd3);
 void startTurboOnly(int TB_Spd3);
 void beginTurboStartup(int speedHz, bool startRgaWhenReady, bool acquireWhenRgaReady);
@@ -428,6 +433,11 @@ void loop() {
 
   turbo.task();
 
+  // RGA flushes in startNextRgaScan(); cover the case where it isn't acquiring.
+  if (rgaAcquisitionState == RgaAcquisitionState::Idle) {
+    maybeFlushDataFile();
+  }
+
 #if ENABLE_LOOP_RATE_LOG
   printLoopRate();
 #endif
@@ -449,12 +459,37 @@ void printLoopRate() {
     float loopRate = (float)loopCount / ((currentMillis - previousMillis) / 1000.0);
     Serial.print(loopRate);
     Serial.println(" Hz");
+    Serial.print("SD flush max: ");
+    Serial.print(sdFlushMaxMicros);
+    Serial.println(" us");
     loopCount = 0;
     previousMillis = currentMillis;
   }
 }
 #endif
 
+
+// Commit buffered rows and the directory entry at most once per
+// SD_FLUSH_INTERVAL_MS, so a power loss costs at most one interval of data.
+void maybeFlushDataFile() {
+  if (sdFlushTimer < SD_FLUSH_INTERVAL_MS) {
+    return;
+  }
+  sdFlushTimer = 0;
+  if (!dataFile) {
+    return;
+  }
+#if ENABLE_LOOP_RATE_LOG
+  unsigned long start = micros();
+#endif
+  dataFile.flush();
+#if ENABLE_LOOP_RATE_LOG
+  unsigned long elapsed = micros() - start;
+  if (elapsed > sdFlushMaxMicros) {
+    sdFlushMaxMicros = elapsed;
+  }
+#endif
+}
 
 void createNewDataFile()
 {
@@ -2117,6 +2152,8 @@ void startNextRgaScan() {
   Serial.print("Measuring mass: ");
   Serial.println(activeRgaMass);
   rga.startScanNonBlocking(activeRgaMass);
+  // RGA is integrating; a slow flush here costs nothing.
+  maybeFlushDataFile();
   rgaScanTimer = 0;
   rgaAcquisitionState = RgaAcquisitionState::WaitForScan;
 }
