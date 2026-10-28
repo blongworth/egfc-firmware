@@ -6,6 +6,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
+#include <MTP_Teensy.h>
 #include <TimeLib.h>
 
 #include "Config.h"
@@ -25,6 +26,9 @@
 char FileName[32];
 File dataFile;
 bool file_created = false;
+bool sdReady = false;
+bool mtpActive = false;
+uint32_t mtpStore = 0;
 TurboPump turbo;
 RGADevice rga(Serial4);
 SCALUPDevice scalup(Serial3);
@@ -206,6 +210,10 @@ bool turnElectronMultiplierOff();
 bool handleConfigCommand(char *command);
 bool handleConfigStoreCommand(const char *command);
 bool configChangeAllowed();
+bool mtpAllowed();
+void updateMtp();
+void mtpFilesChanged();
+bool handleSdCommand(const char *command);
 bool valveCommandAllowed(bool manualValveMove, const char **reason);
 bool pumpCommandAllowed();
 void sendConfigAll();
@@ -229,6 +237,7 @@ void checkTurboDuringAcquisition();
 int int_out(char aaa[50], int a, int b);
 time_t getTeensy3Time();
 void getTimeISO8601(char *iso8601Time, size_t bufferSize);
+void logStatusRow(const char *statusRow);
 void updateValveExperiment();
 void updateValvePreflush();
 void updateManualFlush(bool valveWasMoving);
@@ -247,6 +256,9 @@ bool oxygenOutsideRange();
 
 void setup() {
   Serial.begin(9600);
+
+  // start MTP early so the host enumerates while the blocking RGA init runs
+  MTP.begin();
 
   // setup teensy crash reporting
   if (CrashReport) {
@@ -310,6 +322,9 @@ void setup() {
   }
   else {
     Serial.println("card initialized.");
+    sdReady = true;
+    mtpStore = MTP.addFilesystem(SD, "EGFC SD");
+    mtpActive = mtpAllowed();
   }
 
 #ifdef USE_ETHERNET
@@ -382,6 +397,7 @@ void setup() {
 ////////////////////// Main Loop //////////////////////
 
 void loop() {
+  updateMtp();
   updateAutostart();
 
   readSerialCommand();
@@ -410,6 +426,7 @@ void loop() {
     if (!file_created && minute() == 10)
     {
       createNewDataFile();
+      mtpFilesChanged();
       file_created = true;
     }
     if (file_created && minute() != 10)
@@ -859,6 +876,10 @@ void handleCommand(char *command) {
     return;
   }
 
+  if (handleSdCommand(command)) {
+    return;
+  }
+
   if (strcmp(command, "CFGS") == 0 || strcmp(command, "CFGL") == 0 || strcmp(command, "CFGD") == 0) {
     if (!handleConfigStoreCommand(command)) {
       sendErr(command, "Failed");
@@ -1276,6 +1297,135 @@ bool configChangeAllowed() {
   return systemState != SystemState::Acquiring &&
          systemState != SystemState::AcquisitionStarting &&
          activeTransitionCommand[0] == '\0';
+}
+
+// MTP serves the SD card only while idle, so it never does SD I/O during
+// acquisition.
+bool mtpAllowed() {
+  return sdReady && configChangeAllowed();
+}
+
+// Service MTP when idle. On idle <-> acquiring edges, tell the host the
+// storage went away / needs re-listing instead of letting it time out.
+void updateMtp() {
+  bool allowed = mtpAllowed();
+  if (allowed != mtpActive) {
+    mtpActive = allowed;
+    if (allowed) {
+      MTP.send_DeviceResetEvent();
+    } else {
+      MTP.send_StoreRemovedEvent(mtpStore);
+    }
+  }
+  if (allowed) {
+    MTP.loop();
+  }
+}
+
+// Ask the host to re-list files after the firmware changes the card.
+void mtpFilesChanged() {
+  if (mtpActive) {
+    MTP.send_DeviceResetEvent();
+  }
+}
+
+// SDLS: list files. SDERA: delete gems_*.txt except the active file.
+// SDFMT,YES: format the card and start a new data file.
+bool handleSdCommand(const char *command) {
+  bool isLs = strcmp(command, "SDLS") == 0;
+  bool isEra = strcmp(command, "SDERA") == 0;
+  bool isFmt = strncmp(command, "SDFMT", 5) == 0;
+  if (!isLs && !isEra && !isFmt) {
+    return false;
+  }
+  const char *name = isLs ? "SDLS" : (isEra ? "SDERA" : "SDFMT");
+
+  if (!configChangeAllowed()) {
+    sendErr(name, "Busy");
+    return true;
+  }
+  if (!sdReady) {
+    sendErr(name, "no SD card");
+    return true;
+  }
+  if (isFmt && strcmp(command, "SDFMT,YES") != 0) {
+    sendErr(name, "send SDFMT,YES to confirm");
+    return true;
+  }
+
+  if (isFmt) {
+    // close first so the periodic flush can't touch the old handle
+    dataFile.close();
+    if (!SD.format()) {
+      sendErr(name, "format failed");
+      return true;
+    }
+    if (!SD.begin(SD_CHIP_SELECT)) {
+      sdReady = false;
+      sendErr(name, "SD begin failed");
+      return true;
+    }
+    createNewDataFile();
+    char row[48];
+    char iso8601Time[25];
+    getTimeISO8601(iso8601Time, sizeof(iso8601Time));
+    snprintf(row, sizeof(row), "!:%s,SDFMT", iso8601Time);
+    logStatusRow(row);
+    mtpFilesChanged();
+    sendDone(name);
+    return true;
+  }
+
+  File root = SD.open("/");
+  if (!root) {
+    sendErr(name, "open failed");
+    return true;
+  }
+  // collect names first; deleting while iterating the directory is unsafe
+  static char names[64][40];
+  int count = 0;
+  bool truncated = false;
+  File entry;
+  while ((entry = root.openNextFile())) {
+    if (!entry.isDirectory()) {
+      if (count < 64) {
+        snprintf(names[count], sizeof(names[count]), "%s", entry.name());
+        count++;
+      } else {
+        truncated = true;
+      }
+      if (isLs) {
+        char line[80];
+        snprintf(line, sizeof(line), "SDLS,%s,%lu", entry.name(),
+                 static_cast<unsigned long>(entry.size()));
+        sendResponse(line);
+      }
+    }
+    entry.close();
+  }
+  root.close();
+
+  if (isEra) {
+    int removed = 0;
+    for (int i = 0; i < count; i++) {
+      if (strncmp(names[i], "gems_", 5) == 0 && strstr(names[i], ".txt") != nullptr &&
+          strcmp(names[i], FileName) != 0 && SD.remove(names[i])) {
+        removed++;
+      }
+    }
+    char line[40];
+    snprintf(line, sizeof(line), "SDERA,%d", removed);
+    sendResponse(line);
+    if (removed > 0) {
+      mtpFilesChanged();
+    }
+    if (truncated) {
+      sendErr(name, "more files remain, repeat");
+      return true;
+    }
+  }
+  sendOk(name);
+  return true;
 }
 
 // Valve moves share no hardware with the turbopump or RGA, so an active
