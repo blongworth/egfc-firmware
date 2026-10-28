@@ -73,6 +73,9 @@ Commands are short ASCII strings with no spaces and are terminated with carriage
 | `CFGS` | Save current runtime settings to Teensy EEPROM. Rejected while acquiring, acquisition-starting, or busy. |
 | `CFGL` | Load runtime settings from Teensy EEPROM. Rejected while acquiring, acquisition-starting, or busy. |
 | `CFGD` | Clear saved EEPROM settings and restore `Config.h` defaults. Rejected while acquiring, acquisition-starting, or busy. |
+| `SDLS` | List files on the SD card as `SDLS,<name>,<bytes>`. Rejected while acquiring, acquisition-starting, or busy. |
+| `SDERA` | Delete all `gems_*.txt` files except the active data file; replies `SDERA,<count>`. Rejected while acquiring, acquisition-starting, or busy. |
+| `SDFMT,YES` | Format the SD card, start a new data file, and log a `!:<time>,SDFMT` row. The `YES` token is required. Rejected while acquiring, acquisition-starting, or busy. |
 | `TP` | Query raw RGA total pressure integer from `TP?`. Rejected while RGA mass acquisition is active. |
 | `ST` | Query RGA stored total-pressure sensitivity factor in `mA/Torr`. Rejected while RGA mass acquisition is active. |
 | `SP` | Query RGA stored partial-pressure sensitivity factor in `mA/Torr`. Rejected while RGA mass acquisition is active. |
@@ -165,6 +168,15 @@ Data rows use:
 ```text
 R:<timestamp>,<mass>,<current>
 ```
+
+## Retrieving data (MTP)
+
+The build uses `USB_MTPDISK_SERIAL`: the USB port exposes the serial command port plus an MTP device showing the SD card as "EGFC SD".
+
+- MTP is served **only while idle**. When acquisition starts, the storage disappears from the host; after `SP` completes it reappears (the host re-lists files).
+- macOS has no native MTP; use OpenMTP or Android File Transfer. Windows Explorer works directly.
+- The active data file stays open and is flushed every 10 s, so a copy is at most about 10 s stale. Do not delete the newest `gems_*.txt` over MTP.
+- A new data file triggers a host refresh. MTP stalls briefly during blocking RGA calls.
 
 ## Serial Data Output
 
